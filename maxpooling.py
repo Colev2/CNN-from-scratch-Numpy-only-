@@ -41,9 +41,12 @@ class MaxPooling2D_layer:
             for col in range(0, input.shape[2] - self.pool_size[1] + 1, self.stride):
                 output_row = row // self.stride
                 output_col = col // self.stride
-                window = input[:, row:row + self.pool_size[0], col:col + self.pool_size[1], :]
-                max_element = np.max(window, axis=(1,2))
-                self.max_element_idx[:, output_row, output_col, :] = np.argmax(window, axis=(1,2))
+                window = input[:, row:row + self.pool_size[0], col:col + self.pool_size[1], :]  # (B,Kh,Kw,C)
+                max_element = np.max(window, axis=(1,2))    # shape: (B,C). Element max[b,c] is the maximum of the 2D pooling 
+                                                            # window of image b on channel c
+                window_transpose = np.transpose(window, (0, 3, 1, 2))     # shape: (B,C,Kh,Kw)
+                window_transpose_new = np.reshape(window_transpose.shape[0], window_transpose[1], -1)   # shape: (B,C,Kh*Kw)
+                self.max_element_idx[:, output_row, output_col, :] = np.argmax(window_transpose_new, axis=2)
                 output[:, output_row, output_col, :] = max_element
 
         return output
@@ -66,8 +69,8 @@ class MaxPooling2D_layer:
         din = np.zeros(self.input_shape, dtype=self.dtype)
 
         for channel in range(dout.shape[2]):
-            for output_row in range(dout.shape[0]):
-                for output_col in range(dout.shape[1]):
+            for output_row in range(dout.shape[1]):
+                for output_col in range(dout.shape[2]):
                     input_row = output_row * self.stride
                     input_col = output_col * self.stride
                     flat_window_shape_idx = self.max_element_idx[output_row, output_col, channel]
