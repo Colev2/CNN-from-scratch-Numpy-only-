@@ -1,7 +1,10 @@
 import numpy as np
 
 class Dense_layer:
-    def __init__(self, in_features, out_features, neurons=1, rng=None, initialization="he", distribution="normal"):
+    def __init__(self, in_features, neurons=1, rng=None, initialization="he", distribution="normal"):
+        if in_features < 1:
+            raise ValueError("Input features must be 1 or more")
+        
         if neurons < 1:
             raise ValueError("Neurons must be 1 or more")
         
@@ -14,53 +17,81 @@ class Dense_layer:
         if distribution not in ["normal", "uniform"]:
             raise ValueError("distribution argument must be either 'normal' or 'uniform'")
 
+        self.input = None
+        self.output_shape = None
+        self.dweights = None
+        self.dbias = None
+
         self.in_features = in_features
-        self.out_features = out_features
         self.dtype = np.float32
 
         fan_in = in_features
-        fan_out = out_features
+        fan_out = neurons
 
         # Weights: He initialization
         if initialization == "he":
             if distribution == "normal":
                 std = (2 / fan_in) ** 0.5
-                self.filter_weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))   # (F,Kh,Kw,Cin)
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))   
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
             elif distribution == "uniform":
                 limit = (6 / fan_in) ** 0.5
-                self.filter_weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         # Weights: Xavier initialization
         elif initialization == "xavier":
             if distribution == "normal":
                 std = (2 / (fan_in + fan_out)) ** 0.5
-                self.filter_weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
             elif distribution == "uniform":
                 limit = (6 / (fan_in + fan_out)) ** 0.5
-                self.filter_weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         self.bias = np.zeros((neurons), dtype=self.dtype)
 
 
-        def forward(self, input: np.ndarray) -> np.ndarray:
-            input = np.asarray(input, dtype=self.dtype)
-            self.input_shape = input.shape
+    def forward(self, input: np.ndarray) -> np.ndarray:
+        input = np.asarray(input, dtype=self.dtype)
+        
+        if input.shape != (self.in_features,):
+            raise ValueError("Input shape must be (input_features,). Flatten layer needs to be called")
+        
+        self.input = input
 
-            if self.input_shape != self.in_features:
-                raise ValueError("input shape must be same as in_features argument")
+        output = self.weights @ self.input + self.bias
+        self.output_shape = output.shape
 
-            output = self.filter_weights @ input + self.bias
-            self.output_shape = output.shape
-
-            return output
+        return output
 
 
-        def backward(self, dout: np.ndarray) -> np.ndarray:
-            if dout.shape != self.output_shape:
-                raise ValueError("Dout shape must be same as Dense's forward's output's shape")
+    def backward(self, dout: np.ndarray) -> np.ndarray:
+        dout = np.asarray(dout, dtype=self.dtype)
 
-            return din
+        if self.input is None:
+            raise ValueError("Dense's forward method needs to be called to get input")
+
+        if self.output_shape is None:
+            raise ValueError("Dense's forward method needs to be called to get output shape")
+        
+        if dout.shape != self.output_shape:
+            raise ValueError("Dout shape must be same as Dense's forward's output's shape")
+
+        # z = Wx + b
+
+        # θL/θx_j = Σ_i (θL/θz_i * w_ij) = Σ_i (dout_i * w_ij)
+        dL_dx = self.weights.T @ dout
+
+        # θL/θb_i = θL/θz_i = dout_i
+        dL_db = dout
+
+        # θL/θw_ij = θL/θz_i * x_j = dout_i * x_j
+        dL_dw = np.outer(dout, self.input)
+
+        self.dweights = dL_dw
+        self.dbias = dL_db
+        din = dL_dx
+
+        return din

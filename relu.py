@@ -6,19 +6,25 @@ class ReLU_layer:
         self.dtype = np.float32
 
     def forward(self, input: np.ndarray) -> np.ndarray:
-        if input.ndim != 3:
-            raise ValueError("Input in ReLU layer must be 3-dimensional")
+        if input.ndim != 4:
+            raise ValueError("Input in ReLU must be of shape (B,H,W,C)")
         
         input = np.asarray(input, dtype=self.dtype)
+
         output = np.maximum(0, input)
-        self.positive_input_mask = input > 0
+        self.positive_input_mask = input > 0        # Boolean ndarray that is basically the input's derivative, with the convention that ReLU'(0) = 0
 
         return output   
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         dout = np.asarray(dout, self.dtype)
+
+        if dout.shape != self.positive_input_mask:
+            raise ValueError("Dout must have same shape as positive_input_mask in ReLU")
+
         if self.positive_input_mask is None:
-            raise ValueError("ReLU forward method must be called first")
+            raise ValueError("Positive_input_mask attribute isn't initialized. ReLU's forward method must be called first")
+        
         din = dout * self.positive_input_mask
 
         return din
@@ -27,9 +33,8 @@ class ReLU_layer:
 def main():
     layer = ReLU_layer()
     input = np.array([[-2, 3], [0, 5]])
-    dout = np.array([[7, -4], [2, 6]])
     layer.forward(input)
-    print(layer.backward(dout))
+    print(layer.positive_input_mask)
 
 
 
