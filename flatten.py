@@ -7,11 +7,15 @@ class Flatten_layer:
         self.output_shape = None
 
     def forward(self, input: np.ndarray) -> np.ndarray:
+        if input.ndim != 4:
+            raise ValueError("Flatten layer input must have shape (B,H,W,C)")
+        
         input = np.asarray(input, self.dtype)
         
         self.input_shape = input.shape
 
-        output = input.flatten()
+        output = np.reshape(input, shape=(input.shape[0], -1))
+
         self.output_shape = output.shape
 
         return output

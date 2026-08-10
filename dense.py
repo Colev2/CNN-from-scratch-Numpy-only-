@@ -56,12 +56,12 @@ class Dense_layer:
     def forward(self, input: np.ndarray) -> np.ndarray:
         input = np.asarray(input, dtype=self.dtype)
         
-        if input.shape != (self.in_features,):
-            raise ValueError("Input shape must be (input_features,). Flatten layer needs to be called")
+        if input.shape != (input.shape[0], self.in_features,):
+            raise ValueError("Input shape must be (B,input_features). Flatten layer needs to be called")
         
         self.input = input
 
-        output = self.weights @ self.input + self.bias
+        output = self.input @ self.weights.T + self.bias    # (B,features) @ (features,neurons) + (neurons,) -> (B,neurons)
         self.output_shape = output.shape
 
         return output
@@ -82,13 +82,13 @@ class Dense_layer:
         # z = Wx + b
 
         # θL/θx_j = Σ_i (θL/θz_i * w_ij) = Σ_i (dout_i * w_ij)
-        dL_dx = self.weights.T @ dout
+        dL_dx = dout @ self.weights     # (B,neurons) @ (neurons,features)  ->  (B,features)
 
         # θL/θb_i = θL/θz_i = dout_i
-        dL_db = dout
+        dL_db = np.sum(dout, axis=0)
 
         # θL/θw_ij = θL/θz_i * x_j = dout_i * x_j
-        dL_dw = np.outer(dout, self.input)
+        dL_dw = dout.T @ self.input
 
         self.dweights = dL_dw
         self.dbias = dL_db

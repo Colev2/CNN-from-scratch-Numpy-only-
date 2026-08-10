@@ -750,3 +750,281 @@ for b in range(B):
 ```
 
 That loop-based interpretation is the most useful way to reason about the advanced indexing whenever the vectorized expression becomes difficult to read.
+
+
+
+## Dense Layer Backpropagation — Single Sample and Batch Case
+
+For a single sample:
+
+[
+z = Wx + b
+]
+
+with:
+
+```text
+x    : (N,)
+W    : (M, N)
+b    : (M,)
+z    : (M,)
+dout : (M,)
+```
+
+where:
+
+[
+dout_i = \frac{\partial L}{\partial z_i}
+]
+
+### Gradient with respect to the input
+
+For input feature (x_j):
+
+[
+\frac{\partial L}{\partial x_j}
+===============================
+
+\sum_i
+\frac{\partial L}{\partial z_i}
+\frac{\partial z_i}{\partial x_j}
+]
+
+Since:
+
+[
+\frac{\partial z_i}{\partial x_j}=w_{ij}
+]
+
+we get:
+
+[
+\frac{\partial L}{\partial x_j}
+===============================
+
+\sum_i dout_i w_{ij}
+]
+
+Therefore:
+
+[
+\boxed{dX = W^T dout}
+]
+
+### Gradient with respect to the bias
+
+For bias (b_i):
+
+[
+\frac{\partial L}{\partial b_i}
+===============================
+
+\frac{\partial L}{\partial z_i}
+\frac{\partial z_i}{\partial b_i}
+]
+
+and since:
+
+[
+\frac{\partial z_i}{\partial b_i}=1
+]
+
+we get:
+
+[
+\boxed{db = dout}
+]
+
+### Gradient with respect to the weights
+
+For weight (w_{ij}):
+
+[
+\frac{\partial L}{\partial w_{ij}}
+==================================
+
+\frac{\partial L}{\partial z_i}
+\frac{\partial z_i}{\partial w_{ij}}
+]
+
+Since:
+
+[
+\frac{\partial z_i}{\partial w_{ij}}=x_j
+]
+
+we get:
+
+[
+\frac{\partial L}{\partial w_{ij}}
+==================================
+
+dout_i x_j
+]
+
+For the whole weight matrix:
+
+[
+\boxed{dW = dout , x^T}
+]
+
+which is the outer product of `dout` and `x`.
+
+---
+
+# Batch case
+
+With batches:
+
+```text
+X    : (B, N)
+W    : (M, N)
+b    : (M,)
+Z    : (B, M)
+dout : (B, M)
+```
+
+The same weights and biases are shared by every sample.
+
+For sample (s):
+
+[
+z_{s,i}
+=======
+
+\sum_j w_{ij}x_{s,j}+b_i
+]
+
+The component-wise derivatives are still the same as in the single-sample case. The difference is that shared parameters receive gradient contributions from every sample in the batch.
+
+### Input gradient
+
+Each sample has its own input, so its input gradient must remain separate.
+
+For each sample:
+
+[
+\frac{\partial L}{\partial x_{s,j}}
+===================================
+
+\sum_i dout_{s,i}w_{ij}
+]
+
+Vectorized:
+
+[
+\boxed{dX = dout , W}
+]
+
+with:
+
+```text
+(B, M) @ (M, N) -> (B, N)
+```
+
+No summation over the batch is performed because each sample has its own input features.
+
+---
+
+### Bias gradient
+
+The same bias (b_i) is used for every sample.
+
+Therefore:
+
+[
+\frac{\partial L}{\partial b_i}
+===============================
+
+\sum_s
+\frac{\partial L}{\partial z_{s,i}}
+]
+
+so:
+
+[
+\boxed{
+db_i = \sum_s dout_{s,i}
+}
+]
+
+Vectorized:
+
+```python
+db = np.sum(dout, axis=0)
+```
+
+with:
+
+```text
+(B, M) -> (M,)
+```
+
+The batch dimension disappears because there is only one shared bias vector.
+
+---
+
+### Weight gradient
+
+The same weight (w_{ij}) is also used by every sample.
+
+For one sample (s), its contribution is:
+
+[
+\left(\frac{\partial L}{\partial w_{ij}}\right)_s
+=================================================
+
+dout_{s,i}x_{s,j}
+]
+
+The total gradient must therefore sum the contributions from all samples:
+
+[
+\frac{\partial L}{\partial w_{ij}}
+==================================
+
+\sum_s dout_{s,i}x_{s,j}
+]
+
+For the complete weight matrix:
+
+[
+\boxed{
+dW = dout^T X
+}
+]
+
+because:
+
+```text
+dout.T : (M, B)
+X      : (B, N)
+
+(M, B) @ (B, N) -> (M, N)
+```
+
+and each element of the result is:
+
+[
+(dout^T X)_{ij}
+===============
+
+\sum_s dout_{s,i}x_{s,j}
+]
+
+---
+
+## Final batch formulas
+
+```python
+dX = dout @ W
+db = np.sum(dout, axis=0)
+dW = dout.T @ X
+```
+
+The important distinction is:
+
+* `dX` keeps the batch dimension because every sample has its own input.
+* `dW` has no batch dimension because there is only one shared weight matrix.
+* `db` has no batch dimension because there is only one shared bias vector.
+* Therefore, the gradient contributions from all samples must be accumulated for `dW` and `db`.
