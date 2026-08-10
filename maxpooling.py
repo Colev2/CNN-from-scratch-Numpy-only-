@@ -28,8 +28,14 @@ class MaxPooling2D_layer:
         if input.ndim != 4:
             raise ValueError("Input in MaxPooling layer must be of shape (B,H,W,C)")
 
+        if input.shape[0] <= 0 or input.shape[1] <= 0 or input.shape[2] <= 0:
+            raise ValueError("MaxPooling input dimensions' size must be 1 or greater ")
+
         if input.shape[-1] != self.in_channels:
             raise ValueError("MaxPooling: in_channels kwarg must be equal to input's channels")
+
+        if self.pool_size[0] > input.shape[1] or self.pool_size[1] > input.shape[2]:
+            raise ValueError("MaxPooling window dimensions can't be greater than input dimensions")
 
         self.input_shape = input.shape
         output = np.empty((input.shape[0], math.floor((input.shape[1] - self.pool_size[0]) / self.stride) + 1, 
@@ -44,9 +50,8 @@ class MaxPooling2D_layer:
                 window = input[:, row:row + self.pool_size[0], col:col + self.pool_size[1], :]  # (B,Kh,Kw,C)
                 max_element = np.max(window, axis=(1,2))    # shape: (B,C). Element max[b,c] is the maximum of the 2D pooling 
                                                             # window of image b on channel c
-                window_transpose = np.transpose(window, (0, 3, 1, 2))     # shape: (B,C,Kh,Kw)
-                window_transpose_new = np.reshape(window_transpose.shape[0], window_transpose[1], -1)   # shape: (B,C,Kh*Kw)
-                self.max_element_idx[:, output_row, output_col, :] = np.argmax(window_transpose_new, axis=2)
+                flat_window = np.reshape(window, (window.shape[0], window.shape[1] * window.shape[2], window.shape[3]))   # shape: (B,Kh*Kw,C)
+                self.max_element_idx[:, output_row, output_col, :] = np.argmax(flat_window, axis=1)
                 output[:, output_row, output_col, :] = max_element
 
         return output
@@ -68,15 +73,23 @@ class MaxPooling2D_layer:
         
         din = np.zeros(self.input_shape, dtype=self.dtype)
 
-        for channel in range(dout.shape[2]):
-            for output_row in range(dout.shape[1]):
-                for output_col in range(dout.shape[2]):
-                    input_row = output_row * self.stride
-                    input_col = output_col * self.stride
-                    flat_window_shape_idx = self.max_element_idx[output_row, output_col, channel]
-                    window_shape_row, window_shape_col = np.unravel_index(flat_window_shape_idx, self.pool_size)
-                    input_idx = (input_row + window_shape_row, input_col + window_shape_col, channel)
-                    din[input_idx] += dout[output_row, output_col, channel]
+        batch_idx = np.arange(self.input_shape[0])[:, np.newaxis]
+        channel_idx = np.arange(self.input_shape[3])[np.newaxis, :]
+
+        for output_row in range(dout.shape[1]):
+            for output_col in range(dout.shape[2]):
+                input_row = output_row * self.stride
+                input_col = output_col * self.stride
+                flat_window_idxs = self.max_element_idx[:, output_row, output_col, :]  # Shape: (B,C). Each element is an index from 0 to Kh*Kw-1 representing the maximum 
+                                                                                        # element inside the 2D window of image b and channel c. 
+                window_rows, window_cols = np.unravel_index(flat_window_idxs, self.pool_size)  # (B,C) arrays. window_row(b,c) is the row index of maximum elemenet of image b and 
+                                                                                            # channel c, when the window was at the spatial position (input_row, input_col)                                                                                            
+                global_rows = input_row + window_rows   # Broadcasting scalar input_row and (B,C) arrays. (input_row, input_col) is the position the
+                global_cols = input_col + window_cols   # window started, so to get the index of the maximum element inside that window, we need to add window_row, window_col
+                                                        # to window's starting index. For instance, if window started at [H, W] = [3, 4], and the maximum
+                                                        # element inside it was at the window position [1,1] (starting indexing from 0 as if its a new array)
+                                                        # then the maximum element of image b and channel c is at [3 + 1, 4 + 1] = [4,5] when window starts at [3, 4]
+                din[batch_idx, global_rows, global_cols, channel_idx] += dout[:, output_row, output_col, :]
 
         return din
 
