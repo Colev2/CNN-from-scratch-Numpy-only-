@@ -757,9 +757,9 @@ That loop-based interpretation is the most useful way to reason about the advanc
 
 For a single sample:
 
-$$
+```math
 z = Wx + b
-$$
+```
 
 with:
 
@@ -773,95 +773,95 @@ dout : (M,)
 
 where:
 
-$$
+```math
 dout_i = \frac{\partial L}{\partial z_i}
-$$
+```
 
 ### Gradient with respect to the input
 
 For input feature $x_j$:
 
-$$
+```math
 \frac{\partial L}{\partial x_j}
 =
 \sum_i
 \frac{\partial L}{\partial z_i}
 \frac{\partial z_i}{\partial x_j}
-$$
+```
 
 Since:
 
-$$
+```math
 \frac{\partial z_i}{\partial x_j} = w_{ij}
-$$
+```
 
 we get:
 
-$$
+```math
 \frac{\partial L}{\partial x_j}
 =
 \sum_i dout_i w_{ij}
-$$
+```
 
 Therefore:
 
-$$
-\boxed{dX = W^T dout}
-$$
+```math
+dX = W^T dout
+```
 
 ### Gradient with respect to the bias
 
 For bias $b_i$:
 
-$$
+```math
 \frac{\partial L}{\partial b_i}
 =
 \frac{\partial L}{\partial z_i}
 \frac{\partial z_i}{\partial b_i}
-$$
+```
 
 Since:
 
-$$
+```math
 \frac{\partial z_i}{\partial b_i} = 1
-$$
+```
 
 we get:
 
-$$
-\boxed{db = dout}
-$$
+```math
+db = dout
+```
 
 ### Gradient with respect to the weights
 
 For weight $w_{ij}$:
 
-$$
+```math
 \frac{\partial L}{\partial w_{ij}}
 =
 \frac{\partial L}{\partial z_i}
 \frac{\partial z_i}{\partial w_{ij}}
-$$
+```
 
 Since:
 
-$$
+```math
 \frac{\partial z_i}{\partial w_{ij}} = x_j
-$$
+```
 
 we get:
 
-$$
+```math
 \frac{\partial L}{\partial w_{ij}}
 =
 dout_i x_j
-$$
+```
 
 For the whole weight matrix:
 
-$$
-\boxed{dW = dout \, x^T}
-$$
+```math
+dW = dout \, x^T
+```
 
 This is the outer product between `dout` and `x`.
 
@@ -883,11 +883,11 @@ The same weights and biases are shared by every sample in the batch.
 
 For sample $s$:
 
-$$
+```math
 z_{s,i}
 =
 \sum_j w_{ij}x_{s,j} + b_i
-$$
+```
 
 The component-wise derivatives are still the same as in the single-sample case.
 
@@ -899,34 +899,34 @@ Each sample has its own input, so each sample must also have its own input gradi
 
 For sample $s$:
 
-$$
+```math
 \frac{\partial L}{\partial x_{s,j}}
 =
 \sum_i
 \frac{\partial L}{\partial z_{s,i}}w_{ij}
-$$
+```
 
 Since:
 
-$$
+```math
 \frac{\partial L}{\partial z_{s,i}}
 =
 dout_{s,i}
-$$
+```
 
 we get:
 
-$$
+```math
 \frac{\partial L}{\partial x_{s,j}}
 =
 \sum_i dout_{s,i}w_{ij}
-$$
+```
 
 Vectorized:
 
-$$
-\boxed{dX = dout \, W}
-$$
+```math
+dX = dout \, W
+```
 
 with shapes:
 
@@ -944,33 +944,33 @@ The same bias $b_i$ is used for every sample.
 
 Therefore, $b_i$ affects:
 
-$$
+```math
 z_{0,i}, z_{1,i}, \ldots, z_{B-1,i}
-$$
+```
 
 Using the chain rule:
 
-$$
+```math
 \frac{\partial L}{\partial b_i}
 =
 \sum_s
 \frac{\partial L}{\partial z_{s,i}}
 \frac{\partial z_{s,i}}{\partial b_i}
-$$
+```
 
 Since:
 
-$$
+```math
 \frac{\partial z_{s,i}}{\partial b_i} = 1
-$$
+```
 
 we get:
 
-$$
+```math
 \frac{\partial L}{\partial b_i}
 =
 \sum_s dout_{s,i}
-$$
+```
 
 Vectorized:
 
@@ -994,41 +994,41 @@ The same weight $w_{ij}$ is also used by every sample.
 
 For one sample $s$, its contribution to the gradient is:
 
-$$
+```math
 \left(
 \frac{\partial L}{\partial w_{ij}}
 \right)_s
 =
 dout_{s,i}x_{s,j}
-$$
+```
 
 Since the same weight is used by all samples, all contributions must be accumulated:
 
-$$
+```math
 \frac{\partial L}{\partial w_{ij}}
 =
 \sum_s dout_{s,i}x_{s,j}
-$$
+```
 
-For one sample, the full weight-gradient matrix would be the outer product:
+For one sample, the complete weight-gradient matrix is the outer product:
 
-$$
+```math
 dW_s = dout_s \, x_s^T
-$$
+```
 
 For the complete batch:
 
-$$
+```math
 dW
 =
 \sum_s dout_s \, x_s^T
-$$
+```
 
 This entire sum can be computed with one matrix multiplication:
 
-$$
-\boxed{dW = dout^T X}
-$$
+```math
+dW = dout^T X
+```
 
 because:
 
@@ -1039,13 +1039,13 @@ X      : (B, N)
 (M, B) @ (B, N) -> (M, N)
 ```
 
-and each element of the result is:
+Each element of the result is:
 
-$$
+```math
 (dout^T X)_{ij}
 =
 \sum_s dout_{s,i}x_{s,j}
-$$
+```
 
 which is exactly the required gradient for weight $w_{ij}$.
 
@@ -1066,4 +1066,4 @@ The main distinction is:
 - `db` does not have a batch dimension because there is only one shared bias vector.
 - Therefore, the gradient contributions from all samples are accumulated for `dW` and `db`.
 
-Whether these batch gradients should ultimately correspond to a **sum or a mean over the batch** depends on how the batch loss is defined. That will be handled when implementing the loss function.
+Whether the batch gradients ultimately correspond to a **sum or a mean over the batch** depends on how the batch loss is defined. That will be handled when implementing the loss function.
