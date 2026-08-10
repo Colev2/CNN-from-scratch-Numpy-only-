@@ -753,7 +753,7 @@ That loop-based interpretation is the most useful way to reason about the advanc
 
 
 
-## Dense Layer Backpropagation — Single Sample and Batch Case
+# Dense Layer Backpropagation — Single Sample and Batch Case
 
 For a single sample:
 
