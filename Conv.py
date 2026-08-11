@@ -14,35 +14,35 @@ class Conv_layer:
     def __init__(self, in_channels=1, filters=1, filter_shape=(3,3), padding=1, stride=1, rng=None, initialization="he", distribution="normal"):
         # in_channels kwarg
         if in_channels < 1:
-            raise ValueError("Channels must be 1 or greater")
+            raise ValueError("Conv: Channels must be 1 or greater")
         if not isinstance(in_channels, int):
-            raise ValueError("Input Channels must be integer")
+            raise ValueError("Conv: Input Channels must be integer")
 
         # filters kwarg
         if not isinstance(filters, int):
-            raise ValueError("Number of Filters must be integer")
+            raise ValueError("Conv: Number of Filters must be integer")
         if filters < 1:
-            raise ValueError("Filters must be 1 or greater")
+            raise ValueError("Conv: Filters must be 1 or greater")
 
         # filter_shape kwarg
         if len(filter_shape) != 2:
-            raise ValueError("filter_shape keyword argument must be a tuple of length 2, for instance: (3,3)")
+            raise ValueError("Conv: filter_shape keyword argument must be a tuple of length 2, for instance: (3,3)")
         if filter_shape[0] < 1 or filter_shape[1] < 1:
-            raise ValueError("Filter height and width must be 1 or greater")
+            raise ValueError("Conv: Filter height and width must be 1 or greater")
         if not isinstance(filter_shape[0], int) or not isinstance(filter_shape[1], int):
-            raise ValueError("Filter_shape must be a tuple of integers")
+            raise ValueError("Conv: Filter_shape must be a tuple of integers")
 
         # padding kwarg
         if padding < 0:
-            raise ValueError("Padding must be 0 or greater")
+            raise ValueError("Conv: Padding must be 0 or greater")
         if not isinstance(padding, int):
-            raise ValueError("Padding must be integer")
+            raise ValueError("Conv: Padding must be integer")
 
         # stride kwarg
         if stride < 1:
-            raise ValueError("Stride must be 1 or greater")
+            raise ValueError("Conv: Stride must be 1 or greater")
         if not isinstance(stride, int):
-            raise ValueError("Stride must be integer")
+            raise ValueError("Conv: Stride must be integer")
 
         # rng kwarg
         if rng is None:
@@ -50,11 +50,11 @@ class Conv_layer:
 
         # initialization kwarg
         if initialization not in ["he", "xavier"]:
-            raise ValueError("initialization argument must be either 'he' or 'xavier'")
+            raise ValueError("Conv: initialization argument must be either 'he' or 'xavier'")
 
         # distribution kwarg
         if distribution not in ["normal", "uniform"]:
-            raise ValueError("distribution argument must be either 'normal' or 'uniform'")
+            raise ValueError("Conv: distribution argument must be either 'normal' or 'uniform'")
 
         self.in_channels = in_channels
         self.filters = filters
@@ -92,7 +92,7 @@ class Conv_layer:
 
     def forward(self, input_img: np.ndarray) -> np.ndarray:
         if input_img.ndim != 4:
-            raise ValueError("Input image must have shape: (B,H,W,C) where B is the batch size, H and W are image's height and width, and C the channels of the image.")
+            raise ValueError("Conv: Input image must have shape: (B,H,W,C) where B is the batch size, H and W are image's height and width, and C the channels of the image.")
 
         self.input_img = np.asarray(input_img, np.float32)
         batch_size = self.input_img.shape[0]
@@ -101,13 +101,13 @@ class Conv_layer:
         img_channels = self.input_img.shape[3]
         
         if img_height <= 0 or img_width <= 0:
-            raise ValueError("Image Height and Width must be 1 or greater")
+            raise ValueError("Conv: Image Height and Width must be 1 or greater")
 
         if batch_size <= 0 :
-            raise ValueError("Batch size must be greater than 0")
+            raise ValueError("Conv: Batch size must be greater than 0")
         
         if img_channels != self.in_channels:
-            raise ValueError(f"Convolutional Layer was initialized with {self.in_channels} input channels")
+            raise ValueError(f"Conv: Layer was initialized with {self.in_channels} input channels")
 
         # Padding
         arr = np.zeros((batch_size, img_height + self.padding * 2, img_width + self.padding * 2, img_channels), dtype=self.dtype)   # B x (2P+img_rows) x (2P+img_col) x Channels
@@ -115,7 +115,7 @@ class Conv_layer:
         self.padded_input_img = arr
 
         if self.filter_shape[0] > self.padded_input_img.shape[1] or self.filter_shape[1] > self.padded_input_img.shape[2    ]:
-            raise ValueError("Filter dimensions must not be greater than padded image dimensions")
+            raise ValueError("Conv: Filter dimensions must not be greater than padded image dimensions")
 
         output_row, output_col = 0, 0
         window = np.empty((self.filter_shape[0], self.filter_shape[1], self.in_channels), dtype=self.dtype)     # H x W x C

@@ -71,13 +71,13 @@ class Dense_layer:
         dout = np.asarray(dout, dtype=self.dtype)
 
         if self.input is None:
-            raise ValueError("Dense's forward method needs to be called to get input")
+            raise ValueError("Dense: Forward method needs to be called to get input")
 
         if self.output_shape is None:
-            raise ValueError("Dense's forward method needs to be called to get output shape")
+            raise ValueError("Dense: Forward method needs to be called to get output shape")
         
         if dout.shape != self.output_shape:
-            raise ValueError("Dout shape must be same as Dense's forward's output's shape")
+            raise ValueError("Dense: Dout shape must be same as Dense's forward's output's shape")
 
         # z = Wx + b
 

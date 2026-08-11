@@ -7,7 +7,7 @@ class ReLU_layer:
 
     def forward(self, input: np.ndarray) -> np.ndarray:
         if input.ndim != 4:
-            raise ValueError("Input in ReLU must be of shape (B,H,W,C)")
+            raise ValueError("ReLU: Input must be of shape (B,H,W,C)")
         
         input = np.asarray(input, dtype=self.dtype)
 
@@ -20,10 +20,10 @@ class ReLU_layer:
         dout = np.asarray(dout, self.dtype)
 
         if dout.shape != self.positive_input_mask:
-            raise ValueError("Dout must have same shape as positive_input_mask in ReLU")
+            raise ValueError("ReLU: Dout must have same shape as positive_input_mask")
 
         if self.positive_input_mask is None:
-            raise ValueError("Positive_input_mask attribute isn't initialized. ReLU's forward method must be called first")
+            raise ValueError("ReLU: Positive_input_mask attribute isn't initialized. Forward method needs to be called")
         
         din = dout * self.positive_input_mask
 

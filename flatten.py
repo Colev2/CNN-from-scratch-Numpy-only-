@@ -8,7 +8,7 @@ class Flatten_layer:
 
     def forward(self, input: np.ndarray) -> np.ndarray:
         if input.ndim != 4:
-            raise ValueError("Flatten layer input must have shape (B,H,W,C)")
+            raise ValueError("Flatten: Input must have shape (B,H,W,C)")
         
         input = np.asarray(input, self.dtype)
         
@@ -24,13 +24,13 @@ class Flatten_layer:
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.input_shape is None:
-            raise ValueError("Attribute input_shape wasn't initialized. Flatten_layer's forward method needs to be called.")
+            raise ValueError("Flatten: input_shape attribute wasn't initialized. Forward method needs to be called.")
 
         if self.output_shape is None:
-            raise ValueError("Attribute output_shape wasn't initialized. Flatten_layer's forward method needs to be called.")
+            raise ValueError("Flatten: output_shape attribute wasn't initialized. Forward method needs to be called.")
 
         if dout.shape != self.output_shape:
-            raise ValueError("Dout shape must be same as Flatten_layer's forward's output shape")
+            raise ValueError("Flatten: Dout shape must be same as forward's output shape")
 
         din = np.reshape(dout, shape=self.input_shape)
 

@@ -58,16 +58,16 @@ class MaxPooling2D_layer:
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.input_shape is None:
-            raise ValueError("input_shape attribute wasn't initialized. You need to call MaxPooling forward method to do so.")
+            raise ValueError("MaxPooling: input_shape attribute wasn't initialized. Forward method needs to be called")
 
         if self.output_shape is None:
-            raise ValueError("output_shape attribute wasn't initialized. You need to call MaxPooling forward method to do so.")
+            raise ValueError("MaxPooling: output_shape attribute wasn't initialized. Forward method needs to be called")
 
         if self.max_element_idx is None:
-            raise ValueError("max_element_idx attribute wasn't initialized. You need to call MaxPooling forward method to do so.")
+            raise ValueError("MaxPooling: max_element_idx attribute wasn't initialized. Forward method needs to be called")
 
         if dout.shape != self.output_shape:
-            raise ValueError("Dout shape must be equal to forward's output's shape")
+            raise ValueError("MaxPooling: Dout shape must be same as forward's output shape")
 
         dout = np.asarray(dout, dtype=self.dtype)
         
