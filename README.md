@@ -1067,3 +1067,628 @@ The main distinction is:
 - Therefore, the gradient contributions from all samples are accumulated for `dW` and `db`.
 
 Whether the batch gradients ultimately correspond to a **sum or a mean over the batch** depends on how the batch loss is defined. That will be handled when implementing the loss function.
+
+
+
+## Softmax + Cross-Entropy Loss
+
+The final classification layer of the network produces **logits**, i.e. raw class scores:
+
+[
+Z \in \mathbb{R}^{B \times M}
+]
+
+where:
+
+* (B): batch size
+* (M): number of classes
+* (z_{b,i}): logit of class (i) for sample (b)
+
+Instead of implementing Softmax and Cross-Entropy as completely independent operations, they can be combined into a single loss class. This gives a simpler backward pass and allows the loss to be computed in a more numerically stable way.
+
+---
+
+### Softmax
+
+For a single sample, the Softmax probability of class (i) is:
+
+[
+p_i =
+\frac{e^{z_i}}
+{\sum_j e^{z_j}}
+]
+
+For a batch:
+
+[
+P.shape = (B,M)
+]
+
+and each row represents an independent probability distribution.
+
+Therefore Softmax operates across the **class axis** (`axis=1`).
+
+To avoid overflow when exponentiating large logits, the maximum logit of each sample is subtracted:
+
+[
+m_b = \max_j z_{b,j}
+]
+
+and Softmax is computed as:
+
+[
+p_{b,i}
+=======
+
+\frac{e^{z_{b,i}-m_b}}
+{\sum_j e^{z_{b,j}-m_b}}
+]
+
+This is mathematically equivalent to the original Softmax because the common factor (e^{-m_b}) cancels between numerator and denominator.
+
+For the batch:
+
+```python
+max_logits = np.max(input, axis=1)
+```
+
+Shape:
+
+```text
+(B,)
+```
+
+To subtract one maximum from every class of the corresponding sample:
+
+```python
+input - max_logits[:, np.newaxis]
+```
+
+Shapes:
+
+```text
+(B,M) - (B,1) -> (B,M)
+```
+
+Therefore:
+
+```python
+exp_array = np.exp(input - max_logits[:, np.newaxis])
+```
+
+has shape:
+
+```text
+(B,M)
+```
+
+The denominator is computed independently for every sample:
+
+```python
+exp_sum = np.sum(exp_array, axis=1)
+```
+
+Shape:
+
+```text
+(B,)
+```
+
+and the probabilities are:
+
+```python
+probabilities = exp_array / exp_sum[:, np.newaxis]
+```
+
+with broadcasting:
+
+```text
+(B,M) / (B,1) -> (B,M)
+```
+
+Every row therefore sums to approximately 1.
+
+---
+
+## Cross-Entropy
+
+For a single sample whose correct class is (k):
+
+[
+L=-\log(p_k)
+]
+
+A high probability for the correct class produces a small loss, while a probability approaching zero produces a very large loss.
+
+With integer class labels, a one-hot vector does not need to be constructed explicitly.
+
+For a batch:
+
+```text
+labels.shape = (B,)
+```
+
+where:
+
+[
+y_b
+]
+
+is the correct class index for sample (b).
+
+The correct logit/probability for every sample can be selected using NumPy advanced indexing:
+
+```python
+batch_indexes = np.arange(B)
+values = array[batch_indexes, labels]
+```
+
+which selects:
+
+[
+array[0,y_0],;
+array[1,y_1],;
+\dots,;
+array[B-1,y_{B-1}]
+]
+
+and produces shape:
+
+```text
+(B,)
+```
+
+---
+
+## Stable Softmax + Cross-Entropy Forward
+
+Computing:
+
+[
+-\log(p_k)
+]
+
+directly from the Softmax probability can still create a numerical problem.
+
+Even after subtracting the maximum logit, the exponential corresponding to the correct class may underflow to zero if its logit is much smaller than the maximum:
+
+[
+e^{z_k-m}\approx0
+]
+
+which would produce:
+
+[
+-\log(0)=+\infty
+]
+
+Instead, the Softmax and Cross-Entropy expressions can be combined algebraically.
+
+Starting from:
+
+[
+L=-\log(p_k)
+]
+
+and:
+
+[
+p_k=
+\frac{e^{z_k}}
+{\sum_j e^{z_j}}
+]
+
+we obtain:
+
+[
+L
+=
+
+-\log
+\left(
+\frac{e^{z_k}}
+{\sum_j e^{z_j}}
+\right)
+]
+
+Using logarithm properties:
+
+[
+L
+=
+
+-z_k
++
+\log
+\left(
+\sum_j e^{z_j}
+\right)
+]
+
+Now let:
+
+[
+m=\max_j z_j
+]
+
+Then:
+
+[
+\sum_j e^{z_j}
+==============
+
+e^m
+\sum_j e^{z_j-m}
+]
+
+and therefore:
+
+[
+\log
+\left(
+\sum_j e^{z_j}
+\right)
+=======
+
+m+
+\log
+\left(
+\sum_j e^{z_j-m}
+\right)
+]
+
+The final numerically stable single-sample loss is therefore:
+
+[
+L
+=
+
+-z_k
++
+m
++
+\log
+\left(
+\sum_j e^{z_j-m}
+\right)
+]
+
+This avoids both problems:
+
+* no large positive value is directly exponentiated;
+* the quantity inside the logarithm cannot become zero, because at least one shifted logit is exactly zero:
+
+[
+e^{m-m}=e^0=1
+]
+
+so:
+
+[
+\sum_j e^{z_j-m}\ge1
+]
+
+For a batch, each sample has its own (m_b):
+
+[
+L_b
+===
+
+-z_{b,y_b}
++
+m_b
++
+\log
+\left(
+\sum_j e^{z_{b,j}-m_b}
+\right)
+]
+
+The final batch loss is defined as the mean:
+
+[
+L_{\text{batch}}
+================
+
+\frac{1}{B}
+\sum_b L_b
+]
+
+so the returned loss is a **scalar**.
+
+---
+
+## Backward — Component-wise Derivation
+
+We want:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+]
+
+for the logit of class (i) of sample (b).
+
+Because:
+
+[
+L_{\text{batch}}
+================
+
+\frac{1}{B}
+\sum_s L_s
+]
+
+the probabilities/logits of sample (b) affect only (L_b), not the losses of the other samples.
+
+Therefore:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+==================
+
+\frac{1}{B}
+\frac{\partial L_b}
+{\partial z_{b,i}}
+]
+
+For sample (b), let (k=y_b) be the correct class:
+
+[
+L_b=-\log(p_{b,k})
+]
+
+Thus:
+
+[
+\frac{\partial L_b}
+{\partial p_{b,k}}
+==================
+
+-\frac{1}{p_{b,k}}
+]
+
+Although the Cross-Entropy directly depends only on the probability of the correct class, that probability depends on **every logit of the same sample** through Softmax.
+
+Therefore:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+==================
+
+\frac{1}{B}
+\left(
+-\frac{1}{p_{b,k}}
+\right)
+\frac{\partial p_{b,k}}
+{\partial z_{b,i}}
+]
+
+The Softmax derivative has two cases.
+
+### Incorrect class: (i\neq k)
+
+[
+\frac{\partial p_{b,k}}
+{\partial z_{b,i}}
+==================
+
+-p_{b,k}p_{b,i}
+]
+
+Therefore:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+==================
+
+\frac{1}{B}
+\left(
+-\frac{1}{p_{b,k}}
+\right)
+(-p_{b,k}p_{b,i})
+]
+
+and:
+
+[
+\boxed{
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+==================
+
+\frac{p_{b,i}}{B}
+}
+]
+
+for (i\neq k).
+
+### Correct class: (i=k)
+
+For the correct class:
+
+[
+\frac{\partial p_{b,k}}
+{\partial z_{b,k}}
+==================
+
+p_{b,k}(1-p_{b,k})
+]
+
+Therefore:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,k}}
+==================
+
+\frac{1}{B}
+\left(
+-\frac{1}{p_{b,k}}
+\right)
+p_{b,k}(1-p_{b,k})
+]
+
+which simplifies to:
+
+[
+\boxed{
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,k}}
+==================
+
+\frac{p_{b,k}-1}{B}
+}
+]
+
+Therefore the complete component-wise result is:
+
+[
+\frac{\partial L_{\text{batch}}}
+{\partial z_{b,i}}
+==================
+
+\begin{cases}
+\dfrac{p_{b,i}}{B},
+& i\neq y_b[6pt]
+
+\dfrac{p_{b,i}-1}{B},
+& i=y_b
+\end{cases}
+]
+
+---
+
+## Vectorized Backward
+
+If the labels were represented using a one-hot matrix:
+
+[
+Y.shape=(B,M)
+]
+
+the complete derivative could be written compactly as:
+
+[
+\boxed{
+\frac{\partial L_{\text{batch}}}{\partial Z}
+============================================
+
+\frac{P-Y}{B}
+}
+]
+
+However, constructing a full one-hot matrix is unnecessary when the labels are stored as integer class indices.
+
+First initialize every gradient with:
+
+[
+\frac{p_{b,i}}{B}
+]
+
+for all samples and classes.
+
+Then, for each sample (b), subtract (1/B) only from its correct class:
+
+```python
+gradients = self.probabilities / self.batch_size
+gradients[batch_indexes, self.labels] -= 1 / self.batch_size
+```
+
+The first operation gives:
+
+```text
+gradients.shape = (B,M)
+```
+
+with:
+
+[
+gradients_{b,i}
+===============
+
+\frac{p_{b,i}}{B}
+]
+
+The advanced-indexing operation selects exactly:
+
+[
+[b,y_b]
+]
+
+for every sample and changes the correct-class gradient to:
+
+[
+\frac{p_{b,y_b}}{B}
+-------------------
+
+# \frac1B
+
+\frac{p_{b,y_b}-1}{B}
+]
+
+This produces exactly the same result as:
+
+[
+(P-Y)/B
+]
+
+without explicitly constructing (Y).
+
+---
+
+## What This Derivation Achieves
+
+Combining Softmax and Cross-Entropy gives several useful results.
+
+First, the backward pass becomes extremely simple:
+
+[
+\frac{\partial L}{\partial Z}
+=============================
+
+\frac{P-Y}{B}
+]
+
+instead of explicitly propagating the Cross-Entropy gradient through the full Softmax Jacobian.
+
+Second, the implementation does not need to construct one-hot target vectors. Integer labels are enough, because NumPy advanced indexing allows the correct class of every sample to be selected directly.
+
+Third, the forward loss can be computed directly from the logits using the stable **log-sum-exp** form. This avoids both large exponentials and the possibility of evaluating `log(0)` after a correct-class Softmax probability underflows to zero.
+
+Finally, the batch dimension remains conceptually simple:
+
+* each sample has its own logits and probability distribution;
+* Softmax never mixes information between different samples;
+* each sample contributes independently to the total loss;
+* the final batch loss is the mean of those sample losses;
+* therefore every sample's gradient receives the factor (1/B).
+
+The resulting layer takes logits of shape:
+
+```text
+(B,M)
+```
+
+and integer labels of shape:
+
+```text
+(B,)
+```
+
+returns a scalar training loss in the forward pass, and returns:
+
+```text
+(B,M)
+```
+
+in the backward pass, representing:
+
+[
+\frac{\partial L_{\text{batch}}}{\partial Z}
+]
+
+which can then be passed directly into the backward method of the final Dense layer.
