@@ -1074,82 +1074,260 @@ Whether the batch gradients ultimately correspond to a **sum or a mean over the 
 
 The final classification layer of the network produces **logits** $Z \in \mathbb{R}^{B \times M}$, where $B$ is the batch size, $M$ is the number of classes, and $z_{b,i}$ is the logit of class $i$ for sample $b$.
 
-Instead of implementing Softmax and Cross-Entropy as completely independent operations, they can be combined into a single loss class. This gives a simpler backward pass and allows the loss to be computed in a more numerically stable way.
+Instead of implementing Softmax and Cross-Entropy as completely independent operations, they can be combined into a single loss. This produces a much simpler backward pass and allows the loss to be computed in a more numerically stable way.
 
 ---
 
 ### Softmax
 
-For a single sample, the Softmax probability of class $i$ is $$p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}.$$ For a batch, $P.shape = (B,M)$, and each row represents an independent probability distribution, so Softmax operates across the **class axis** (`axis=1`).
+For a single sample, the Softmax probability of class $i$ is:
 
-To avoid overflow when exponentiating large logits, the maximum logit of each sample is subtracted. For sample $b$, define $$m_b = \max_j z_{b,j}.$$ Then the Softmax becomes $$p_{b,i} = \frac{e^{z_{b,i}-m_b}}{\sum_j e^{z_{b,j}-m_b}}.$$ This is mathematically equivalent to the original Softmax because the common factor $e^{-m_b}$ cancels between numerator and denominator.
+$$p_i = \frac{e^{z_i}}{\sum_j e^{z_j}}$$
 
-For the batch case, `max_logits` has shape $(B,)$, one maximum per sample. To subtract one maximum from every class of the corresponding sample, we conceptually use broadcasting $(B,M) - (B,1) \to (B,M)$. Therefore the exponentials have shape $(B,M)$, and the per-sample sums across the class axis have shape $(B,)$. The final probabilities also have shape $(B,M)$, using broadcasting $(B,M) / (B,1) \to (B,M)$. Every row therefore sums to approximately 1.
+For a batch, the probability matrix has shape $(B,M)$, where every row corresponds to one independent sample. Therefore, Softmax operates across the **class axis**, while different samples in the batch never interact with each other.
+
+To avoid overflow when exponentiating large logits, the maximum logit of each sample is subtracted. For sample $b$:
+
+$$m_b = \max_j z_{b,j}$$
+
+The Softmax can then be written as:
+
+$$p_{b,i} = \frac{e^{z_{b,i}-m_b}}{\sum_j e^{z_{b,j}-m_b}}$$
+
+This is mathematically equivalent to the original Softmax because the factor $e^{-m_b}$ appears in both numerator and denominator and therefore cancels.
+
+For a batch, the logits have shape $(B,M)$ and the maximum values have shape $(B,)$. When the maxima are temporarily viewed as $(B,1)$, broadcasting performs:
+
+$$(B,M) - (B,1) \rightarrow (B,M)$$
+
+Therefore the shifted exponentials also have shape $(B,M)$. Summing across the class axis produces one denominator per sample, with shape $(B,)$. Broadcasting that denominator back across the classes gives the final probabilities with shape $(B,M)$.
+
+Each row is therefore an independent probability distribution whose elements sum approximately to 1.
 
 ---
 
 ## Cross-Entropy
 
-For a single sample whose correct class is $k$, the Cross-Entropy loss is $$L = -\log(p_k).$$ A high probability for the correct class produces a small loss, while a probability approaching zero produces a very large loss.
+For a single sample whose correct class is $k$, the Cross-Entropy loss is:
 
-With integer class labels, a one-hot vector does not need to be constructed explicitly. For a batch, `labels.shape = (B,)`, where $y_b$ is the correct class index for sample $b$. Using NumPy advanced indexing, the correct class of each sample is conceptually selected as $array[b, y_b]$, giving one value per sample and therefore shape $(B,)$.
+$$L = -\log(p_k)$$
+
+A probability close to 1 for the correct class produces a small loss, while a probability approaching 0 produces a very large loss.
+
+For a batch, the labels are stored as integer class indices with shape $(B,)$. If $y_b$ is the correct class of sample $b$, then only the probability $p_{b,y_b}$ is required to compute that sample's Cross-Entropy loss.
+
+Therefore, one-hot vectors are useful for mathematical notation, but they do not need to be explicitly constructed in the implementation.
 
 ---
 
 ## Stable Softmax + Cross-Entropy Forward
 
-Computing the loss directly as $-\log(p_k)$ after Softmax can still create a numerical issue. Even after subtracting the maximum logit, the exponential corresponding to the correct class may underflow to zero if its logit is much smaller than the maximum, which would make $p_k = 0$ and therefore $-\log(0) = +\infty$.
+Computing Cross-Entropy directly as $-\log(p_k)$ after Softmax can still create a numerical problem.
 
-To avoid this, Softmax and Cross-Entropy can be combined algebraically. Starting from $$L = -\log(p_k), \qquad p_k = \frac{e^{z_k}}{\sum_j e^{z_j}},$$ we get $$L = -\log\left(\frac{e^{z_k}}{\sum_j e^{z_j}}\right) = -z_k + \log\left(\sum_j e^{z_j}\right).$$ Now let $$m = \max_j z_j.$$ Then $$\sum_j e^{z_j} = e^m \sum_j e^{z_j-m},$$ so $$\log\left(\sum_j e^{z_j}\right) = m + \log\left(\sum_j e^{z_j-m}\right).$$ Therefore the stable single-sample loss becomes $$L = -z_k + m + \log\left(\sum_j e^{z_j-m}\right).$$
+Even after subtracting the maximum logit, the exponential corresponding to the correct class may become extremely small. In finite-precision floating-point arithmetic, it may even underflow to exactly zero. This would produce:
 
-This avoids both numerical problems: no large positive value is directly exponentiated, and the quantity inside the logarithm cannot become zero, because at least one shifted logit is exactly zero, so one term is always $e^0 = 1$, and therefore $$\sum_j e^{z_j-m} \ge 1.$$ For a batch, each sample has its own maximum $m_b$, so the per-sample loss is $$L_b = -z_{b,y_b} + m_b + \log\left(\sum_j e^{z_{b,j}-m_b}\right).$$ The final batch loss is defined as the mean over all samples: $$L_{\text{batch}} = \frac{1}{B}\sum_b L_b.$$ The returned loss is therefore a **scalar**.
+$$-\log(0) = +\infty$$
 
-Shape-wise, `input.shape = (B,M)`, `max_logits.shape = (B,)`, the shifted logits still have shape $(B,M)$, the exponentials also have shape $(B,M)$, the per-sample exponential sums have shape $(B,)$, the correct-class logits have shape $(B,)$, the per-sample losses have shape $(B,)$, and finally the batch loss is a scalar.
+The problem can be avoided by combining the Softmax and Cross-Entropy expressions algebraically and computing the loss directly from the logits.
+
+Starting from:
+
+$$L = -\log(p_k)$$
+
+and:
+
+$$p_k = \frac{e^{z_k}}{\sum_j e^{z_j}}$$
+
+substitution gives:
+
+$$L = -\log\left(\frac{e^{z_k}}{\sum_j e^{z_j}}\right)$$
+
+Using the logarithm rule $\log(a/b)=\log(a)-\log(b)$:
+
+$$L = -\log(e^{z_k}) + \log\left(\sum_j e^{z_j}\right)$$
+
+Since $\log(e^{z_k})=z_k$:
+
+$$L = -z_k + \log\left(\sum_j e^{z_j}\right)$$
+
+The remaining problem is that the exponential terms $e^{z_j}$ may overflow when some logits are very large.
+
+Let:
+
+$$m = \max_j z_j$$
+
+Then:
+
+$$\sum_j e^{z_j} = e^m \sum_j e^{z_j-m}$$
+
+Therefore:
+
+$$\log\left(\sum_j e^{z_j}\right) = \log\left(e^m \sum_j e^{z_j-m}\right)$$
+
+Using $\log(ab)=\log(a)+\log(b)$:
+
+$$\log\left(\sum_j e^{z_j}\right) = m + \log\left(\sum_j e^{z_j-m}\right)$$
+
+The final numerically stable single-sample loss is therefore:
+
+$$L = -z_k + m + \log\left(\sum_j e^{z_j-m}\right)$$
+
+This solves both numerical problems.
+
+No large positive number needs to be exponentiated because $z_j-m \le 0$ for every class. At the same time, the quantity inside the logarithm cannot become zero. Since $m$ is itself one of the logits, at least one term satisfies:
+
+$$e^{m-m} = e^0 = 1$$
+
+and therefore:
+
+$$\sum_j e^{z_j-m} \ge 1$$
+
+Some exponentials corresponding to very small logits may underflow to zero, but this is harmless because the sum always contains at least one term equal to 1.
+
+For a batch, every sample has its own maximum $m_b$. The loss of sample $b$ is therefore:
+
+$$L_b = -z_{b,y_b} + m_b + \log\left(\sum_j e^{z_{b,j}-m_b}\right)$$
+
+The final batch loss is defined as the mean of all sample losses:
+
+$$L_{\text{batch}} = \frac{1}{B}\sum_b L_b$$
+
+The individual sample losses have shape $(B,)$, while the final batch loss is a scalar.
 
 ---
 
 ## Backward — Component-wise Derivation
 
-We want the derivative of the batch loss with respect to a logit $z_{b,i}$, that is $$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}}.$$ Since $$L_{\text{batch}} = \frac{1}{B}\sum_s L_s,$$ the logits of sample $b$ affect only the loss $L_b$ of that same sample, not the losses of the other samples. Therefore $$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\frac{\partial L_b}{\partial z_{b,i}}.$$ Let $k = y_b$ be the correct class of sample $b$. Then $$L_b = -\log(p_{b,k}),$$ so $$\frac{\partial L_b}{\partial p_{b,k}} = -\frac{1}{p_{b,k}}.$$
+The goal of the backward pass is to compute the derivative of the scalar batch loss with respect to every logit:
 
-Although Cross-Entropy directly depends only on the probability of the correct class, that probability depends on **all logits of the same sample** through Softmax. Therefore $$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)\frac{\partial p_{b,k}}{\partial z_{b,i}}.$$
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}}$$
 
-Now there are two cases.
+The batch loss is:
 
-If $i \neq k$, then the Softmax derivative is $$\frac{\partial p_{b,k}}{\partial z_{b,i}} = -p_{b,k}p_{b,i},$$ so $$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)(-p_{b,k}p_{b,i}) = \frac{p_{b,i}}{B}.$$ Thus, for every incorrect class, $$\boxed{\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{p_{b,i}}{B}} \qquad \text{for } i \neq y_b.$$
+$$L_{\text{batch}} = \frac{1}{B}\sum_s L_s$$
 
-If $i = k$, then the Softmax derivative is $$\frac{\partial p_{b,k}}{\partial z_{b,k}} = p_{b,k}(1-p_{b,k}),$$ so $$\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)p_{b,k}(1-p_{b,k}) = \frac{p_{b,k}-1}{B}.$$ Thus, for the correct class, $$\boxed{\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = \frac{p_{b,k}-1}{B}} \qquad \text{for } k = y_b.$$
+The logits of sample $b$ affect only the loss $L_b$ of that same sample. They do not affect the losses of any other sample in the batch.
 
-Combining the two cases, the derivative of the batch loss with respect to each logit is $$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \begin{cases} \frac{p_{b,i}}{B}, & i \neq y_b [6pt] \frac{p_{b,i}-1}{B}, & i = y_b \end{cases}.$$
+Therefore:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\frac{\partial L_b}{\partial z_{b,i}}$$
+
+Let $k=y_b$ be the correct class of sample $b$. The sample loss is:
+
+$$L_b = -\log(p_{b,k})$$
+
+The derivative with respect to the probability of the correct class is:
+
+$$\frac{\partial L_b}{\partial p_{b,k}} = -\frac{1}{p_{b,k}}$$
+
+For probabilities corresponding to incorrect classes, Cross-Entropy has zero direct derivative because they do not explicitly appear in $L_b$.
+
+However, the correct-class probability $p_{b,k}$ depends on **every logit of the same sample** through Softmax. Therefore, even an incorrect-class logit can change the loss by changing the denominator of the Softmax.
+
+The chain rule gives:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)\frac{\partial p_{b,k}}{\partial z_{b,i}}$$
+
+There are now two cases.
+
+### Incorrect class: $i \neq k$
+
+For a logit that does not correspond to the correct class:
+
+$$\frac{\partial p_{b,k}}{\partial z_{b,i}} = -p_{b,k}p_{b,i}$$
+
+Substituting into the chain rule:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)(-p_{b,k}p_{b,i})$$
+
+The $p_{b,k}$ terms cancel:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{p_{b,i}}{B}$$
+
+Therefore:
+
+$$\boxed{\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \frac{p_{b,i}}{B}, \qquad i \neq y_b}$$
+
+The gradient is positive for incorrect classes. Therefore, gradient descent tends to decrease their logits.
+
+### Correct class: $i = k$
+
+For the correct-class logit:
+
+$$\frac{\partial p_{b,k}}{\partial z_{b,k}} = p_{b,k}(1-p_{b,k})$$
+
+Substituting into the chain rule:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = \frac{1}{B}\left(-\frac{1}{p_{b,k}}\right)p_{b,k}(1-p_{b,k})$$
+
+After cancelling $p_{b,k}$:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = -\frac{1-p_{b,k}}{B}$$
+
+which is equivalent to:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = \frac{p_{b,k}-1}{B}$$
+
+Therefore:
+
+$$\boxed{\frac{\partial L_{\text{batch}}}{\partial z_{b,k}} = \frac{p_{b,k}-1}{B}, \qquad k = y_b}$$
+
+The gradient of the correct class is negative because $0 < p_{b,k} < 1$. Therefore, gradient descent tends to increase the correct-class logit.
+
+Combining both cases:
+
+$$\frac{\partial L_{\text{batch}}}{\partial z_{b,i}} = \begin{cases} \frac{p_{b,i}}{B}, & i \neq y_b [4pt] \frac{p_{b,i}-1}{B}, & i = y_b \end{cases}$$
 
 ---
 
 ## Vectorized Backward
 
-If the labels were represented using a one-hot matrix $Y \in \mathbb{R}^{B \times M}$, the complete derivative could be written compactly as $$\frac{\partial L_{\text{batch}}}{\partial Z} = \frac{P-Y}{B}.$$ However, constructing a full one-hot matrix is unnecessary when the labels are stored as integer class indices.
+If the labels were represented by a one-hot matrix $Y$ with shape $(B,M)$, the complete derivative could be written as:
 
-The vectorized implementation can be understood in two steps. First, initialize the gradient matrix with $$\frac{p_{b,i}}{B}$$ for every sample $b$ and every class $i$. This immediately gives the correct value for every incorrect class. Second, using advanced indexing, subtract $$\frac{1}{B}$$ only from the correct class of each row. This changes the gradient at the correct class from $$\frac{p_{b,y_b}}{B}$$ to $$\frac{p_{b,y_b}-1}{B}.$$ The final gradient still has shape $(B,M)$, exactly matching the logits.
+$$\boxed{\frac{\partial L_{\text{batch}}}{\partial Z} = \frac{P-Y}{B}}$$
 
-So even without explicitly building a one-hot matrix, the implementation is mathematically identical to $$\frac{P-Y}{B}.$$
+This expression summarizes the complete component-wise derivation.
+
+For every incorrect class, $y_{b,i}=0$, so:
+
+$$\frac{p_{b,i}-0}{B} = \frac{p_{b,i}}{B}$$
+
+For the correct class, $y_{b,i}=1$, so:
+
+$$\frac{p_{b,i}-1}{B}$$
+
+An explicit one-hot matrix is not required in the implementation. Integer labels already identify which element of every row corresponds to the correct class. Conceptually, the vectorized backward therefore starts with $P/B$ for every class and then subtracts $1/B$ only from the correct-class position of each sample.
+
+The output gradient has the same shape as the logits:
+
+$$\frac{\partial L_{\text{batch}}}{\partial Z} \in \mathbb{R}^{B \times M}$$
+
+This $(B,M)$ gradient can then be passed directly into the backward method of the final Dense layer.
 
 ---
 
 ## Shapes Summary
 
-The combined loss takes logits of shape $(B,M)$ and integer labels of shape $(B,)$. In the forward pass, it computes one maximum logit per sample, one exponential sum per sample, one correct-class logit per sample, one sample loss per sample, and finally one scalar batch loss. In the backward pass, it returns a gradient matrix of shape $(B,M)$, representing $$\frac{\partial L_{\text{batch}}}{\partial Z},$$ which can be passed directly to the backward method of the final Dense layer.
+The logits have shape $(B,M)$ and the integer labels have shape $(B,)$. The per-sample maximum logits have shape $(B,)$. The shifted logits and exponentials have shape $(B,M)$. The Softmax denominators have shape $(B,)$. The probabilities have shape $(B,M)$. The correct-class logits have shape $(B,)$. The individual sample losses have shape $(B,)$. The mean batch loss is a scalar. Finally, the backward pass returns $\partial L_{\text{batch}}/\partial Z$ with shape $(B,M)$.
 
 ---
 
 ## What This Derivation Achieves
 
-This derivation gives several important results.
+Combining Softmax and Cross-Entropy provides both a mathematical and a numerical advantage.
 
-First, it shows that Softmax and Cross-Entropy can be treated as a single numerically stable loss, rather than two loosely connected operations.
+The forward pass can be written using the stable log-sum-exp form:
 
-Second, it explains why the backward pass becomes so simple: instead of explicitly propagating the Cross-Entropy gradient through the full Softmax Jacobian every time, the final result collapses to the compact form $$\frac{P-Y}{B}.$$
+$$L_b = -z_{b,y_b} + m_b + \log\left(\sum_j e^{z_{b,j}-m_b}\right)$$
 
-Third, it shows that integer class labels are fully sufficient: a one-hot target matrix is useful for derivation and notation, but not required in the actual implementation.
+This prevents overflow from very large logits and avoids evaluating the logarithm of a Softmax probability that may have underflowed to zero.
 
-Fourth, it clarifies the role of the batch dimension: each sample has its own independent logits and probability distribution, Softmax never mixes information between different samples, each sample contributes independently to the total loss, and because the batch loss is defined as the mean, every sample contribution introduces the factor $$\frac{1}{B}.$$
+The backward pass simplifies to:
 
-Finally, it provides the exact quantity needed by the previous layer during backpropagation: a matrix of shape $(B,M)$ containing the gradient of the mean batch loss with respect to the logits of every sample and every class.
+$$\frac{\partial L_{\text{batch}}}{\partial Z} = \frac{P-Y}{B}$$
+
+This avoids explicitly propagating the Cross-Entropy gradient through the full Softmax Jacobian during implementation.
+
+The derivation also makes the role of the batch dimension clear. Samples do not interact through Softmax or Cross-Entropy: every sample has its own logits, its own probability distribution, and its own loss. The only operation combining the samples is the final mean, which introduces the factor $1/B$ into every sample's gradient.
+
+Finally, one-hot labels are not required in the actual implementation. They are useful for expressing the final derivative compactly as $(P-Y)/B$, but integer class labels contain all the information needed to obtain the same result using indexing.
