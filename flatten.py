@@ -20,8 +20,6 @@ class Flatten_layer:
 
         return output
 
-
-
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.input_shape is None:
             raise ValueError("Flatten: input_shape attribute wasn't initialized. Forward method needs to be called.")

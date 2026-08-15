@@ -1,5 +1,3 @@
-# Cross-Entropy Loss
-
 import numpy as np
 
 class SoftmaxCrossEntropyLoss:
@@ -53,21 +51,22 @@ class SoftmaxCrossEntropyLoss:
 
         return batch_loss
 
+
     def backward(self) -> np.ndarray:
         if self.probabilities is None:
             raise ValueError("Cross Entropy: probabilities attribute wasn't initialized. Forward method needs to be called")
         
-        gradients = np.empty(self.input_shape, dtype=self.dtype)
+        din = np.empty(self.input_shape, dtype=self.dtype)
 
         batch_indexes = np.arange(self.batch_size)
 
         # uL_batch / u(z_bi) = {p_b,i / B   if i != k, 
         #                       (p_b,k - 1) / B   if i = k} = (P-Y) / B, 
         # where k is the correct class of image b, and Y the one hot vector [0 0...1...0 0]
-        gradients[:, :] = self.probabilities[:, :] / self.batch_size
-        gradients[batch_indexes, self.labels] += -1 / self.batch_size
+        din[:, :] = self.probabilities[:, :] / self.batch_size
+        din[batch_indexes, self.labels] += -1 / self.batch_size
 
-        return gradients
+        return din
 
 
 

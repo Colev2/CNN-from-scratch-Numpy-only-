@@ -1,6 +1,5 @@
 import numpy as np
-import math
-from Conv import Conv_layer
+from conv import Conv_layer
 from relu import ReLU_layer
 
 class MaxPooling2D_layer:
@@ -22,6 +21,7 @@ class MaxPooling2D_layer:
         self.max_element_idx = None
         self.dtype = np.float32
 
+
     def forward(self, input: np.ndarray) -> np.ndarray:
         input = np.asarray(input, dtype=self.dtype)
 
@@ -38,8 +38,8 @@ class MaxPooling2D_layer:
             raise ValueError("MaxPooling window dimensions can't be greater than input dimensions")
 
         self.input_shape = input.shape
-        output = np.empty((input.shape[0], math.floor((input.shape[1] - self.pool_size[0]) / self.stride) + 1, 
-                          math.floor((input.shape[2] - self.pool_size[1]) / self.stride) + 1, self.in_channels), dtype=self.dtype)
+        output = np.empty((input.shape[0], int(np.floor((input.shape[1] - self.pool_size[0]) / self.stride)) + 1, 
+                          int(np.floor((input.shape[2] - self.pool_size[1]) / self.stride)) + 1, self.in_channels), dtype=self.dtype)
         self.output_shape = output.shape
         self.max_element_idx = np.empty_like(output, dtype=np.intp)
         
@@ -55,6 +55,7 @@ class MaxPooling2D_layer:
                 output[:, output_row, output_col, :] = max_element
 
         return output
+
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.input_shape is None:
