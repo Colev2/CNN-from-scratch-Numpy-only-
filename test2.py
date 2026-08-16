@@ -1,5 +1,5 @@
 import numpy as np
-from Conv import Conv_layer
+from conv import Conv_layer
 from relu import ReLU_layer
 
 def main():
