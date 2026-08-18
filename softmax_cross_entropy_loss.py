@@ -10,7 +10,6 @@ class SoftmaxCrossEntropyLoss:
         self.labels = np.asarray(labels)
         input = np.asarray(input, dtype=self.dtype)
 
-
         if input.ndim != 2:
             raise ValueError("Softmax Cross Entropy: Input shape needs to be (B,M)")
 

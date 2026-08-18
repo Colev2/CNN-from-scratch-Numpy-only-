@@ -19,12 +19,12 @@ class ReLU_layer:
     def backward(self, dout: np.ndarray) -> np.ndarray:
         dout = np.asarray(dout, self.dtype)
 
-        if dout.shape != self.positive_input_mask:
-            raise ValueError("ReLU: Dout must have same shape as positive_input_mask")
-
         if self.positive_input_mask is None:
             raise ValueError("ReLU: Positive_input_mask attribute isn't initialized. Forward method needs to be called")
-        
+
+        if dout.shape != self.positive_input_mask.shape:
+            raise ValueError("ReLU: Dout must have same shape as positive_input_mask")
+
         din = dout * self.positive_input_mask
 
         return din

@@ -3,19 +3,23 @@ import numpy as np
 class Dense_layer:
     def __init__(self, in_features, neurons=1, rng=None, initialization="he", distribution="normal"):
         if in_features < 1:
-            raise ValueError("Input features must be 1 or more")
+            raise ValueError("Dense: Input features must be 1 or more")
         
         if neurons < 1:
-            raise ValueError("Neurons must be 1 or more")
+            raise ValueError("Dense: Neurons must be 1 or more")
         
         if rng is None:
             rng = np.random.default_rng()
 
-        if initialization not in ["he", "xavier"]:
-            raise ValueError("initialization argument must be either 'he' or 'xavier'")
+        if not isinstance(initialization, str):
+            raise ValueError("Dense: Initialization must be string")
+        if initialization.strip().lower() not in ["he", "xavier"]:
+            raise ValueError("Dense: initialization argument must be either 'he' or 'xavier'")
 
-        if distribution not in ["normal", "uniform"]:
-            raise ValueError("distribution argument must be either 'normal' or 'uniform'")
+        if not isinstance(distribution, str):
+            raise ValueError("Dense: Distribution must be string")
+        if distribution.strip().lower() not in ["normal", "uniform"]:
+            raise ValueError("Dense: distribution argument must be either 'normal' or 'uniform'")
 
         self.input = None
         self.output_shape = None
@@ -29,23 +33,23 @@ class Dense_layer:
         fan_out = neurons
 
         # Weights: He initialization
-        if initialization == "he":
-            if distribution == "normal":
+        if initialization.strip().lower() == "he":
+            if distribution.strip().lower() == "normal":
                 std = (2 / fan_in) ** 0.5
                 self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))   
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif distribution == "uniform":
+            elif distribution.strip().lower() == "uniform":
                 limit = (6 / fan_in) ** 0.5
                 self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         # Weights: Xavier initialization
-        elif initialization == "xavier":
-            if distribution == "normal":
+        elif initialization.strip().lower() == "xavier":
+            if distribution.strip().lower() == "normal":
                 std = (2 / (fan_in + fan_out)) ** 0.5
                 self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif distribution == "uniform":
+            elif distribution.strip().lower() == "uniform":
                 limit = (6 / (fan_in + fan_out)) ** 0.5
                 self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
@@ -57,7 +61,7 @@ class Dense_layer:
         input = np.asarray(input, dtype=self.dtype)
         
         if input.shape != (input.shape[0], self.in_features,):
-            raise ValueError("Input shape must be (B,input_features). Flatten layer needs to be called")
+            raise ValueError("Dense: Input shape must be (B,input_features). Flatten layer needs to be called")
         
         self.input = input
 

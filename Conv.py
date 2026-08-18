@@ -24,6 +24,8 @@ class Conv_layer:
             raise ValueError("Conv: Filters must be 1 or greater")
 
         # filter_shape kwarg
+        if not isinstance(filter_shape, tuple):
+            raise ValueError("Conv: Filter shape must be a tuple")
         if not isinstance(filter_shape[0], int) or not isinstance(filter_shape[1], int):
             raise ValueError("Conv: Filter_shape must be a tuple of integers")
         if len(filter_shape) != 2:
@@ -50,13 +52,13 @@ class Conv_layer:
         # initialization kwarg
         if not isinstance(initialization, str):
             raise ValueError("Conv: Initialization must be string")
-        if initialization not in ["he", "xavier"]:
+        if initialization.strip().lower() not in ["he", "xavier"]:
             raise ValueError("Conv: initialization argument must be either 'he' or 'xavier'")
 
         # distribution kwarg
         if not isinstance(distribution, str):
             raise ValueError("Conv: Distribution must be string")
-        if distribution not in ["normal", "uniform"]:
+        if distribution.strip().lower() not in ["normal", "uniform"]:
             raise ValueError("Conv: distribution argument must be either 'normal' or 'uniform'")
 
         self.in_channels = in_channels
@@ -74,26 +76,26 @@ class Conv_layer:
         fan_out = filter_shape[0] * filter_shape[1] * filters
 
         # Weights: He initialization
-        if initialization == "he":
-            if distribution == "normal":
+        if initialization.strip().lower() == "he":
+            if distribution.strip().lower() == "normal":
                 std = (2 / fan_in) ** 0.5
-                self.filter_weights = rng.normal(loc=0, scale=std, size=(filters, filter_shape[0], filter_shape[1], in_channels))   # (F,Kh,Kw,Cin)
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
-            elif distribution == "uniform":
+                self.weights = rng.normal(loc=0, scale=std, size=(filters, filter_shape[0], filter_shape[1], in_channels))   # (F,Kh,Kw,Cin)
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
+            elif distribution.strip().lower() == "uniform":
                 limit = (6 / fan_in) ** 0.5
-                self.filter_weights = rng.uniform(low=-limit, high=limit, size=(filters, filter_shape[0], filter_shape[1], in_channels))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.uniform(low=-limit, high=limit, size=(filters, filter_shape[0], filter_shape[1], in_channels))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         # Weights: Xavier initialization
-        elif initialization == "xavier":
-            if distribution == "normal":
+        elif initialization.strip().lower() == "xavier":
+            if distribution.strip().lower() == "normal":
                 std = (2 / (fan_in + fan_out)) ** 0.5
-                self.filter_weights = rng.normal(loc=0, scale=std, size=(filters, filter_shape[0], filter_shape[1], in_channels))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
-            elif distribution == "uniform":
+                self.weights = rng.normal(loc=0, scale=std, size=(filters, filter_shape[0], filter_shape[1], in_channels))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
+            elif distribution.strip().lower() == "uniform":
                 limit = (6 / (fan_in + fan_out)) ** 0.5
-                self.filter_weights = rng.uniform(low=-limit, high=limit, size=(filters, filter_shape[0], filter_shape[1], in_channels))
-                self.filter_weights = np.asarray(self.filter_weights, dtype=self.dtype)
+                self.weights = rng.uniform(low=-limit, high=limit, size=(filters, filter_shape[0], filter_shape[1], in_channels))
+                self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         self.bias = np.zeros((filters), dtype=self.dtype)
 
@@ -139,7 +141,7 @@ class Conv_layer:
                 output_col = col // self.stride
                 window = self.padded_input[:, row:row + Kh, col:col + Kw, :]    # Shape: (B, Kh, Kw, C)
                 window = window[:, np.newaxis, :, :, :]   # Shape: (B,1,Kh,Kw,C)
-                product = window * self.filter_weights  # Broadcasting: (B, 1, Kh, Kw, C) x (F, Kh, Kw, C) -> (B, F, Kh, Kw, C)    
+                product = window * self.weights  # Broadcasting: (B, 1, Kh, Kw, C) x (F, Kh, Kw, C) -> (B, F, Kh, Kw, C)    
                                                         # Image b: window is multiplied with each filter f element-wise. 
                                                         # Product[0,0]: image 0 window * filter 0. Product[0,1]: image 0 window * filter 1, and so on.
                 result = np.sum(product, axis=(2,3,4))  # Shape: (B,F). Element result[b,f] is the convolution result of image b and filter f, at a specific spatial position
@@ -164,7 +166,7 @@ class Conv_layer:
         Kw = self.filter_shape[1] 
 
         dL_db = np.sum(dout, axis=(0,1,2))  # (F,)
-        dL_dw = np.zeros(self.filter_weights.shape, dtype=self.dtype)   # (F, Kh, Kw, C)
+        dL_dw = np.zeros(self.weights.shape, dtype=self.dtype)   # (F, Kh, Kw, C)
         dL_dx_padded = np.zeros(self.padded_input.shape, dtype=self.dtype)    # (B, H + 2P, W + 2P, C)
 
         for row in range(dout.shape[1]):
@@ -175,7 +177,7 @@ class Conv_layer:
 
                 dL_dx_padded[:, row * self.stride:row * self.stride + Kh, 
                             col * self.stride:col * self.stride + Kw, :] += np.sum(dout[:, row, col, :][:, :, np.newaxis, np.newaxis, np.newaxis] 
-                            * self.filter_weights[np.newaxis, :, :, :, :], axis=1)  # Σ_f (B,F,1,1,1) * (1,F,Kh,Kw,C) -> (B,Kh,Kw,C)    
+                            * self.weights[np.newaxis, :, :, :, :], axis=1)  # Σ_f (B,F,1,1,1) * (1,F,Kh,Kw,C) -> (B,Kh,Kw,C)    
 
         dL_dx = dL_dx_padded[:, self.padding:self.padded_input.shape[1] - self.padding, self.padding: self.padded_input.shape[2] - self.padding, :]
 
@@ -242,17 +244,17 @@ def main():
 
     weight_idx = (1, 2, 1, 1)
 
-    original_weight = conv.filter_weights[weight_idx].copy()
+    original_weight = conv.weights[weight_idx].copy()
 
-    conv.filter_weights[weight_idx] = original_weight + epsilon
+    conv.weights[weight_idx] = original_weight + epsilon
     Z_plus = conv.forward(X)
     L_plus = np.sum(Z_plus * G)
 
-    conv.filter_weights[weight_idx] = original_weight - epsilon
+    conv.weights[weight_idx] = original_weight - epsilon
     Z_minus = conv.forward(X)
     L_minus = np.sum(Z_minus * G)
 
-    conv.filter_weights[weight_idx] = original_weight
+    conv.weights[weight_idx] = original_weight
 
     numerical_dw = (L_plus - L_minus) / (2 * epsilon)
     analytical_dw = conv.dweights[weight_idx]
