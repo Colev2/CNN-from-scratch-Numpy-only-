@@ -5,72 +5,24 @@ from maxpooling import MaxPooling2D_layer
 from flatten import Flatten_layer
 from dense import Dense_layer
 from softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
-from optimizer import Adam
+from optimizer import SGD, SGD_momentum, Adam
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 
 
 def main():
-    dataset_choice = input("Choose training dataset:\n" 
-    "1) MNIST\n"
-    "2) Fashion-MNIST\n"
-    "3) CIFAR-10\n"
-    "4) CIFAR-100\n").strip().lower()
-
-    try:
-        epochs = int(input("Choose epochs: "))
-        if epochs <= 0:
-            raise ValueError
-    except ValueError:
-        raise ValueError("Epochs must be integer greater than 0")
-    filter_shape = input("Choose kernel size for Convolutional filters, e.g: (3,3): ")
-    padding = input("Choose Padding for Convolutional Layers: ")
-    stride = input("Choose stride for Convolutional window: ")
-    pool_size = input("Choose pooling window shape for MaxPooling, e.g: (2,2): ")
-    maxpool_stride = input("Choose stride for MaxPooling window: ")
+    dataset_class = get_dataset_class()
+    train_data, labels, X_test, y_test = load_dataset(dataset_class)
+    epochs = get_epochs()
     initialization = input("Choose weights' initialization for Convolutional Layers (He or Xavier): ")
     distribution = input("Choose weights' distribution for Convolutional Layers (Uniform or Normal): ")
-
-    datasets = {
-        "1": MNIST,
-        "mnist": MNIST,
-
-        "2": FashionMNIST,
-        "fashionmnist": FashionMNIST,
-
-        "3": CIFAR10,
-        "cifar-10": CIFAR10,
-
-        "4": CIFAR100,
-        "cifar-100": CIFAR100
-    }
-
-    try:
-        dataset_class = datasets[dataset_choice]
-    except KeyError:
-        raise KeyError("Dataset choice was invalid")
-
-    data_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=True, download=True)
-    test_set_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=False, download=False)
-    data = np.asarray(data_obj.data, dtype=np.float32)
-    test_data = np.asarray(test_set_obj.data, dtype=np.float32)
-    labels = np.asarray(data_obj.targets, dtype=np.int64)
-    test_labels = np.asarray(test_set_obj.targets, dtype=np.int64)
-
-    if data.ndim == 3:
-        data = data[:, :, :, np.newaxis]
-    elif data.ndim != 4:
-        raise ValueError("Dataset needs to have shape (B,H,W,C)")
-
-    if test_data.ndim == 3:
-        test_data = test_data[:, :, :, np.newaxis]
-    elif test_data.ndim != 4:
-        raise ValueError("Test set needs to have shape (B,H,W,C)")
+    learning_rate = get_learning_rate()
+    optimizer_class = get_optimizer_class()
+    optimizer = create_optimizer_object(optimizer_class, learning_rate)
 
     rng = np.random.default_rng(42)
 
-    X_train, y_train, X_val, y_val = train_test_split(data, labels, validation_size=0.1, rng=rng)
-    X_test = test_data
-    y_test = test_labels 
+    # Train/Validation split
+    X_train, y_train, X_val, y_val = train_test_split(train_data, labels, validation_size=0.1, rng=rng)
 
     # In-place standardization of the dataset (new data mean=0, new data std=1)
     mean = np.mean(X_train, axis=(0,1,2), dtype=np.float64, keepdims=True)
@@ -88,40 +40,38 @@ def main():
     X_test -= mean
     X_test /= std
 
-    validation_batches = create_batches(X_val, y_val, batch_size=32, rng=rng)
-
-    conv1 = Conv_layer(in_channels=X_train.shape[3], filters=32, filter_shape=filter_shape, padding=padding, stride=stride, rng=rng, 
+    conv1 = Conv_layer(in_channels=X_train.shape[3], filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, 
                       initialization=initialization, distribution=distribution)
     feature_maps1 = conv1.forward(X_train[0:1])
 
     relu1 = ReLU_layer()
     activation1 = relu1.forward(feature_maps1)
 
-    conv2 = Conv_layer(in_channels=feature_maps1.shape[3], filters=32, filter_shape=filter_shape, padding=padding, stride=stride, rng=rng,
+    conv2 = Conv_layer(in_channels=feature_maps1.shape[3], filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng,
                         initialization=initialization, distribution=distribution)
     feature_maps2 = conv2.forward(activation1)
 
     relu2 = ReLU_layer()
     activation2 = relu2.forward(feature_maps2)
 
-    maxpool1 = MaxPooling2D_layer(in_channels=activation2.shape[3], pool_size=pool_size, stride=maxpool_stride)
+    maxpool1 = MaxPooling2D_layer(in_channels=activation2.shape[3], pool_size=(2,2), stride=2)
     maxpool1_output = maxpool1.forward(activation2)
 
-    conv3 = Conv_layer(in_channels=maxpool1_output.shape[3], filters=64, filter_shape=filter_shape, padding=padding, stride=stride, rng=rng,
+    conv3 = Conv_layer(in_channels=maxpool1_output.shape[3], filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng,
                        initialization=initialization, distribution=distribution)
     feature_maps3 = conv3.forward(maxpool1_output)
 
     relu3 = ReLU_layer()
     activation3 = relu3.forward(feature_maps3)
 
-    conv4 = Conv_layer(in_channels=activation3.shape[3], filters=64, filter_shape=filter_shape, padding=padding, stride=stride, rng=rng,
+    conv4 = Conv_layer(in_channels=activation3.shape[3], filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng,
                        initialization=initialization, distribution=distribution)
     feature_maps4 = conv4.forward(activation3)
 
     relu4 = ReLU_layer()
     activation4 = relu4.forward(feature_maps4)
 
-    maxpool2 = MaxPooling2D_layer(in_channels=activation4.shape[3], pool_size=pool_size, stride=maxpool_stride)
+    maxpool2 = MaxPooling2D_layer(in_channels=activation4.shape[3], pool_size=(2,2), stride=2)
     maxpool2_output = maxpool2.forward(activation4)
 
     flatten = Flatten_layer()
@@ -135,19 +85,24 @@ def main():
 
     loss = SoftmaxCrossEntropyLoss()
 
-    optimizer = Adam(learning_rate=0.01, b1=0.9, b2=0.999, epsilon=0.001)
-
+    # Create validation batches outside of for loop since they don't need shuffling every epoch
+    validation_batches = create_batches(X_val, y_val, batch_size=32, rng=rng)
 
     # Training
     for epoch in range(epochs):
         # Create batches that shuffle each epoch
         train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng)    # [(X_batch_0, y_batch_0), (X_batch_1, y_batch_1), ...]
-        correct_predictions = 0
-        sample_loss_sum = 0
-        for X_batch, y_batch in train_batches:
+
+        correct_predictions_train = 0
+        sample_loss_sum_train = 0
+        correct_predictions_val = 0
+        sample_loss_sum_val = 0
+        
+        for X_train_batch, y_train_batch in train_batches:
+
             # ----- Forward -----
 
-            feature_maps1 = conv1.forward(X_batch)
+            feature_maps1 = conv1.forward(X_train_batch)
             activation1 = relu1.forward(feature_maps1)
 
             feature_maps2 = conv2.forward(activation1)
@@ -169,8 +124,8 @@ def main():
 
             activation5 = relu5.forward(dense1_output)
 
-            logits = dense2.forward(activation5)
-            batch_loss = loss.forward(logits, y_batch)
+            logits_train = dense2.forward(activation5)
+            batch_loss_train = loss.forward(logits_train, y_train_batch)
 
             # ----- Backward -----
 
@@ -213,16 +168,170 @@ def main():
 
             # ----- Sum of sample losses -----
 
-            sample_loss_sum += batch_loss * len(y_batch)
+            sample_loss_sum_train += batch_loss_train * len(y_train_batch)
 
             # ----- Accuracy -----
 
-            highest_prob_idx = np.argmax(logits, axis=1)
-            correct_predictions += np.count_nonzero(highest_prob_idx == y_batch)
+            highest_prob_idx_train = np.argmax(logits_train, axis=1)
+            correct_predictions_train += np.count_nonzero(highest_prob_idx_train == y_train_batch)
 
-        train_accuracy = (correct_predictions / X_train.shape[0]) * 100
+        train_accuracy = (correct_predictions_train / X_train.shape[0]) * 100
 
-        print(f"Epoch {epoch + 1}: loss = {sample_loss_sum / len(y_train)}, train_accuracy = {train_accuracy}%")
+        # ----- Validation Pass -----
+            
+        for X_val_batch, y_val_batch in validation_batches:
+            feature_maps1 = conv1.forward(X_val_batch)
+            activation1 = relu1.forward(feature_maps1)
+
+            feature_maps2 = conv2.forward(activation1)
+            activation2 = relu2.forward(feature_maps2)
+
+            maxpool1_output = maxpool1.forward(activation2)
+
+            feature_maps3 = conv3.forward(maxpool1_output)
+            activation3 = relu3.forward(feature_maps3)
+
+            feature_maps4 = conv4.forward(activation3)
+            activation4 = relu4.forward(feature_maps4)
+
+            maxpool2_output = maxpool2.forward(activation4)
+
+            flattened = flatten.forward(maxpool2_output)
+
+            dense1_output = dense1.forward(flattened)
+
+            activation5 = relu5.forward(dense1_output)
+
+            logits_val = dense2.forward(activation5)
+            batch_loss_val = loss.forward(logits_val, y_val_batch)
+
+            # ----- Sum of sample losses -----
+
+            sample_loss_sum_val += batch_loss_val * len(y_val_batch)
+
+            # ----- Accuracy ------
+
+            highest_prob_idx_val = np.argmax(logits_val, axis=1)
+            correct_predictions_val += np.count_nonzero(highest_prob_idx_val == y_val_batch)
+
+        val_accuracy = (correct_predictions_val / X_val.shape[0]) * 100
+
+        print(f"Epoch {epoch + 1}: train_accuracy = {train_accuracy}%, loss = {sample_loss_sum_train / len(y_train)}, \
+              val_accuracy = {val_accuracy}%, val_loss = {sample_loss_sum_val / len(y_val)}")
+
+
+def get_dataset_class():
+    dataset_choice = input("Choose training dataset:\n" 
+    "1) MNIST\n" 
+    "2) Fashion-MNIST\n" 
+    "3) CIFAR-10\n" 
+    "4) CIFAR-100\n").strip().lower()
+
+    datasets = {
+        "1": MNIST,
+        "mnist": MNIST,
+
+        "2": FashionMNIST,
+        "fashion-mnist": FashionMNIST,
+        "fashionmnist": FashionMNIST,
+
+        "3": CIFAR10,
+        "cifar-10": CIFAR10,
+        "cifar10": CIFAR10,
+
+        "4": CIFAR100,
+        "cifar-100": CIFAR100,
+        "cifar100": CIFAR100
+    }
+
+    try:
+        dataset_class = datasets[dataset_choice]
+    except KeyError:
+        raise ValueError("Dataset choice was invalid")
+
+    return dataset_class
+
+
+def load_dataset(dataset_class: type):
+    data_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=True, download=True)
+
+    test_set_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=False, download=True)
+
+    data = np.asarray(data_obj.data, dtype=np.float32)
+    X_test = np.asarray(test_set_obj.data, dtype=np.float32)
+
+    labels = np.asarray(data_obj.targets, dtype=np.int64)
+    y_test = np.asarray(test_set_obj.targets, dtype=np.int64)
+
+    if data.ndim == 3:
+        data = data[:, :, :, np.newaxis]
+    elif data.ndim != 4:
+        raise ValueError("Dataset needs to have shape (B,H,W,C)")
+
+    if X_test.ndim == 3:
+        X_test = X_test[:, :, :, np.newaxis]
+    elif X_test.ndim != 4:
+        raise ValueError("Test set needs to have shape (B,H,W,C)")
+
+    return data, labels, X_test, y_test
+
+
+def get_epochs():
+    try:
+        epochs = int(input("Choose epochs: "))
+        if epochs <= 0:
+            raise ValueError
+    except ValueError:
+        raise ValueError("Epochs must be an integer greater than 0")
+
+    return epochs
+
+
+def get_learning_rate():
+    try:
+        learning_rate = float(input("Choose learning rate: "))
+        if learning_rate <= 0:
+            raise ValueError
+    except ValueError:
+        raise ValueError("Learning rate must be a float greater than 0")
+
+    return learning_rate
+
+
+def get_optimizer_class():
+    optimizer_choice = input("Choose optimizer:\n" 
+        "1) SGD\n" 
+        "2) SGD_momentum\n" 
+        "3) Adam\n").strip().lower()
+    
+    optimizers = {
+            "1": SGD,
+            "sgd": SGD,
+    
+            "2": SGD_momentum,
+            "sgd_momentum": SGD_momentum,
+    
+            "3": Adam,
+            "adam": Adam
+        }
+    
+    try:
+        optimizer_class = optimizers[optimizer_choice]
+    except KeyError:
+        raise ValueError("Optimizer choice was invalid")
+
+    return optimizer_class
+
+
+def create_optimizer_object(optimizer_class, learning_rate):
+    if optimizer_class == SGD:
+        optimizer = SGD(learning_rate=learning_rate)
+    elif optimizer_class == SGD_momentum:
+        optimizer = SGD_momentum(learning_rate=learning_rate, momentum_coeff=0.9)
+    elif optimizer_class == Adam:
+        optimizer = Adam(learning_rate=learning_rate, b1=0.9, b2=0.999, epsilon=0.001)
+
+    return optimizer
 
 
 def create_batches(X, y, batch_size, rng=None):
@@ -249,6 +358,7 @@ def create_batches(X, y, batch_size, rng=None):
         batches.append((X_batch, y_batch))
 
     return batches      # List of ndarrays: [(X_batch_1, y_batch_1), (X_batch2, y_batch_2), ...]
+
 
 
 def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -287,6 +397,9 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
     y_val = y[val_indexes]
 
     return X_train, y_train, X_val, y_val
+
+
+
     
 if __name__ == "__main__":
     main()

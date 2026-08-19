@@ -6,13 +6,12 @@ class ReLU_layer:
         self.dtype = np.float32
 
     def forward(self, input: np.ndarray) -> np.ndarray:
-        if input.ndim != 4:
-            raise ValueError("ReLU: Input must be of shape (B,H,W,C)")
-        
         input = np.asarray(input, dtype=self.dtype)
 
         output = np.maximum(0, input)
-        self.positive_input_mask = input > 0        # Boolean ndarray that is basically the input's derivative, with the convention that ReLU'(0) = 0
+
+        # Boolean ndarray [False, True,...] whose elements are True where condition is met, which esentially is input's derivative, with the convention that ReLU'(0) = 0
+        self.positive_input_mask = input > 0 
 
         return output   
 
