@@ -157,14 +157,14 @@ def main():
 
             # ----- Trainable parameters -----
 
-            parameters = [(conv1.weights, conv1.dweights), (conv1.bias, conv1.dbias), (conv2.weights, conv2.dweights), (conv2.bias, conv2.dbias),
+            parameters_and_grads = [(conv1.weights, conv1.dweights), (conv1.bias, conv1.dbias), (conv2.weights, conv2.dweights), (conv2.bias, conv2.dbias),
                     (conv3.weights, conv3.dweights), (conv3.bias, conv3.dbias), (conv4.weights, conv4.dweights), (conv4.bias, conv4.dbias),
                     (dense1.weights, dense1.dweights), (dense1.bias, dense1.dbias), (dense2.weights, dense2.dweights), (dense2.bias, dense2.dbias)]
 
 
             # ----- Update -----
 
-            optimizer.update(parameters)
+            optimizer.update(parameters_and_grads)
 
             # ----- Sum of sample losses -----
 
@@ -175,7 +175,7 @@ def main():
             highest_prob_idx_train = np.argmax(logits_train, axis=1)
             correct_predictions_train += np.count_nonzero(highest_prob_idx_train == y_train_batch)
 
-        train_accuracy = (correct_predictions_train / X_train.shape[0]) * 100
+        train_accuracy = (correct_predictions_train / len(y_train)) * 100
 
         # ----- Validation Pass -----
             
@@ -216,8 +216,12 @@ def main():
 
         val_accuracy = (correct_predictions_val / X_val.shape[0]) * 100
 
-        print(f"Epoch {epoch + 1}: train_accuracy = {train_accuracy}%, loss = {sample_loss_sum_train / len(y_train)}, \
-              val_accuracy = {val_accuracy}%, val_loss = {sample_loss_sum_val / len(y_val)}")
+        print(f"Epoch {epoch + 1}: "
+            f"train_accuracy = {train_accuracy:.2f}%, "
+            f"train_loss = {sample_loss_sum_train / len(y_train):.2f} | "
+            f"val_accuracy = {val_accuracy:.2f}%, "
+            f"val_loss = {sample_loss_sum_val / len(y_val):.2f}"
+            )
 
 
 def get_dataset_class():

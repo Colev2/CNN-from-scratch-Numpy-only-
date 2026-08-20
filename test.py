@@ -1,12 +1,12 @@
 import numpy as np
-from flatten import Flatten_layer
+import copy
 
-indexes = np.arange(10)
-np.random.shuffle(indexes)
-print(indexes)
-y = np.array([2, 5, 3, 1, 0, 6, 8, 4, 9, 2])
+a = np.array([1, 2, 3])
 
-y = y[indexes]
-
+x = [a]
+y = copy.deepcopy(x)
+a[0] = 99
+print(a)
+print(x)
 print(y)
 

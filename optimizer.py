@@ -53,9 +53,9 @@ class Adam:
         self.t = 0
         self.state = {}
 
-    def update(self, parameters: list[tuple[np.ndarray, np.ndarray]]) -> None:
+    def update(self, parameters_and_grads: list[tuple[np.ndarray, np.ndarray]]) -> None:
         self.t += 1  
-        for parameter, gradient in parameters:
+        for parameter, gradient in parameters_and_grads:
             if id(parameter) not in self.state:
                 self.state[id(parameter)] = {"m": np.zeros_like(parameter), "u": np.zeros_like(parameter)}
             m = self.b1 * self.state[id(parameter)]["m"] + (1 - self.b1) * gradient
