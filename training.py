@@ -40,50 +40,23 @@ def main():
     X_test -= mean
     X_test /= std
 
-    conv1 = Conv_layer(in_channels=X_train.shape[3], filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, 
-                      initialization=initialization, distribution=distribution)
-    feature_maps1 = conv1.forward(X_train[0:1])
-
+    conv1 = Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
     relu1 = ReLU_layer()
-    activation1 = relu1.forward(feature_maps1)
-
-    conv2 = Conv_layer(in_channels=feature_maps1.shape[3], filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng,
-                        initialization=initialization, distribution=distribution)
-    feature_maps2 = conv2.forward(activation1)
-
+    conv2 = Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
     relu2 = ReLU_layer()
-    activation2 = relu2.forward(feature_maps2)
-
-    maxpool1 = MaxPooling2D_layer(in_channels=activation2.shape[3], pool_size=(2,2), stride=2)
-    maxpool1_output = maxpool1.forward(activation2)
-
-    conv3 = Conv_layer(in_channels=maxpool1_output.shape[3], filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng,
-                       initialization=initialization, distribution=distribution)
-    feature_maps3 = conv3.forward(maxpool1_output)
-
+    maxpool1 = MaxPooling2D_layer(pool_size=(2,2), stride=2)
+    conv3 = Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng, initialization=initialization, distribution=distribution)
     relu3 = ReLU_layer()
-    activation3 = relu3.forward(feature_maps3)
-
-    conv4 = Conv_layer(in_channels=activation3.shape[3], filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng,
-                       initialization=initialization, distribution=distribution)
-    feature_maps4 = conv4.forward(activation3)
-
+    conv4 = Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
     relu4 = ReLU_layer()
-    activation4 = relu4.forward(feature_maps4)
-
-    maxpool2 = MaxPooling2D_layer(in_channels=activation4.shape[3], pool_size=(2,2), stride=2)
-    maxpool2_output = maxpool2.forward(activation4)
-
+    maxpool2 = MaxPooling2D_layer(pool_size=(2,2), stride=2)
     flatten = Flatten_layer()
-    flattened = flatten.forward(maxpool2_output)
-
-    dense1 = Dense_layer(in_features=flattened.shape[1], neurons=256, rng=rng, initialization="he", distribution="normal")
-
+    dense1 = Dense_layer(neurons=256, rng=rng, initialization="he", distribution="normal")
     relu5 = ReLU_layer()
-
-    dense2 = Dense_layer(in_features=256, neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal")
-
+    dense2 = Dense_layer(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal")
     loss = SoftmaxCrossEntropyLoss()
+
+    layers = [conv1, relu1, conv2, relu2, maxpool1, conv3, relu3, conv4, relu4, maxpool2, flatten, dense1, relu5, dense2]
 
     # Create validation batches outside of for loop since they don't need shuffling every epoch
     validation_batches = create_batches(X_val, y_val, batch_size=32, rng=rng)
@@ -99,61 +72,21 @@ def main():
         sample_loss_sum_val = 0
         
         for X_train_batch, y_train_batch in train_batches:
+            x = X_train_batch
 
             # ----- Forward -----
 
-            feature_maps1 = conv1.forward(X_train_batch)
-            activation1 = relu1.forward(feature_maps1)
-
-            feature_maps2 = conv2.forward(activation1)
-            activation2 = relu2.forward(feature_maps2)
-
-            maxpool1_output = maxpool1.forward(activation2)
-
-            feature_maps3 = conv3.forward(maxpool1_output)
-            activation3 = relu3.forward(feature_maps3)
-
-            feature_maps4 = conv4.forward(activation3)
-            activation4 = relu4.forward(feature_maps4)
-
-            maxpool2_output = maxpool2.forward(activation4)
-
-            flattened = flatten.forward(maxpool2_output)
-
-            dense1_output = dense1.forward(flattened)
-
-            activation5 = relu5.forward(dense1_output)
-
-            logits_train = dense2.forward(activation5)
-            batch_loss_train = loss.forward(logits_train, y_train_batch)
+            for layer in layers:
+                x = layer.forward(x)
+                
+            batched_logits_train = x
+            batch_loss_train = loss.forward(batched_logits_train, y_train_batch)  
 
             # ----- Backward -----
 
-            loss_gradient = loss.backward()
-
-            dense2_gradient = dense2.backward(loss_gradient)
-
-            relu5_gradient = relu5.backward(dense2_gradient)
-
-            dense1_gradient = dense1.backward(relu5_gradient)
-
-            flatten_gradient = flatten.backward(dense1_gradient)
-
-            maxpool2_gradient = maxpool2.backward(flatten_gradient)
-
-            relu4_gradient = relu4.backward(maxpool2_gradient)
-            conv4_gradient = conv4.backward(relu4_gradient)
-
-            relu3_gradient = relu3.backward(conv4_gradient)
-            conv3_gradient = conv3.backward(relu3_gradient)
-
-            maxpool1_gradient = maxpool1.backward(conv3_gradient)
-
-            relu2_gradient = relu2.backward(maxpool1_gradient)
-            conv2_gradient = conv2.backward(relu2_gradient)
-
-            relu1_gradient = relu1.backward(conv2_gradient)
-            _ = conv1.backward(relu1_gradient)
+            dlogits = loss.backward()
+            for layer in reversed(layers):
+                dlogits = layer.backward(dlogits)
 
             # ----- Trainable parameters -----
 
@@ -172,37 +105,19 @@ def main():
 
             # ----- Accuracy -----
 
-            highest_prob_idx_train = np.argmax(logits_train, axis=1)
-            correct_predictions_train += np.count_nonzero(highest_prob_idx_train == y_train_batch)
+            predicted_class_idx = np.argmax(batched_logits_train, axis=1)
+            correct_predictions_train += np.count_nonzero(predicted_class_idx == y_train_batch)
 
         train_accuracy = (correct_predictions_train / len(y_train)) * 100
 
         # ----- Validation Pass -----
             
         for X_val_batch, y_val_batch in validation_batches:
-            feature_maps1 = conv1.forward(X_val_batch)
-            activation1 = relu1.forward(feature_maps1)
+            x = X_val_batch
+            for layer in layers:
+                x = layer.forward(x)
 
-            feature_maps2 = conv2.forward(activation1)
-            activation2 = relu2.forward(feature_maps2)
-
-            maxpool1_output = maxpool1.forward(activation2)
-
-            feature_maps3 = conv3.forward(maxpool1_output)
-            activation3 = relu3.forward(feature_maps3)
-
-            feature_maps4 = conv4.forward(activation3)
-            activation4 = relu4.forward(feature_maps4)
-
-            maxpool2_output = maxpool2.forward(activation4)
-
-            flattened = flatten.forward(maxpool2_output)
-
-            dense1_output = dense1.forward(flattened)
-
-            activation5 = relu5.forward(dense1_output)
-
-            logits_val = dense2.forward(activation5)
+            logits_val = x
             batch_loss_val = loss.forward(logits_val, y_val_batch)
 
             # ----- Sum of sample losses -----
@@ -211,8 +126,8 @@ def main():
 
             # ----- Accuracy ------
 
-            highest_prob_idx_val = np.argmax(logits_val, axis=1)
-            correct_predictions_val += np.count_nonzero(highest_prob_idx_val == y_val_batch)
+            predicted_class_idx = np.argmax(logits_val, axis=1)
+            correct_predictions_val += np.count_nonzero(predicted_class_idx == y_val_batch)
 
         val_accuracy = (correct_predictions_val / X_val.shape[0]) * 100
 

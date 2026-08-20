@@ -1,10 +1,7 @@
 import numpy as np
 
 class Dense_layer:
-    def __init__(self, in_features, neurons=1, rng=None, initialization="he", distribution="normal"):
-        if in_features < 1:
-            raise ValueError("Dense: Input features must be 1 or more")
-        
+    def __init__(self, neurons=1, rng=None, initialization="he", distribution="normal"):
         if neurons < 1:
             raise ValueError("Dense: Neurons must be 1 or more")
         
@@ -21,47 +18,61 @@ class Dense_layer:
         if distribution.strip().lower() not in ["normal", "uniform"]:
             raise ValueError("Dense: distribution argument must be either 'normal' or 'uniform'")
 
-        self.input = None
+        self.neurons = neurons
+        self.rng = rng
+        self.initialization = initialization.strip().lower()
+        self.distribution = distribution
         self.output_shape = None
-        self.dweights = None
-        self.dbias = None
 
-        self.in_features = in_features
+        self.in_features = None
+        self.weights = None
         self.dtype = np.float32
 
-        fan_in = in_features
-        fan_out = neurons
+    def _initialize_parameters(self):
+        fan_in = self.in_features
+        fan_out = self.neurons
 
         # Weights: He initialization
-        if initialization.strip().lower() == "he":
-            if distribution.strip().lower() == "normal":
+        if self.initialization == "he":
+            if self.distribution == "normal":
                 std = (2 / fan_in) ** 0.5
-                self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))   
+                self.weights = self.rng.normal(loc=0, scale=std, size=(self.neurons, self.in_features))   
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif distribution.strip().lower() == "uniform":
+            elif self.distribution == "uniform":
                 limit = (6 / fan_in) ** 0.5
-                self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
+                self.weights = self.rng.uniform(low=-limit, high=limit, size=(self.neurons, self.in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         # Weights: Xavier initialization
-        elif initialization.strip().lower() == "xavier":
-            if distribution.strip().lower() == "normal":
+        elif self.initialization == "xavier":
+            if self.distribution == "normal":
                 std = (2 / (fan_in + fan_out)) ** 0.5
-                self.weights = rng.normal(loc=0, scale=std, size=(neurons, in_features))
+                self.weights = self.rng.normal(loc=0, scale=std, size=(self.neurons, self.in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif distribution.strip().lower() == "uniform":
+            elif self.distribution == "uniform":
                 limit = (6 / (fan_in + fan_out)) ** 0.5
-                self.weights = rng.uniform(low=-limit, high=limit, size=(neurons, in_features))
+                self.weights = self.rng.uniform(low=-limit, high=limit, size=(self.neurons, self.in_features))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
 
-        self.bias = np.zeros((neurons), dtype=self.dtype)
+        self.bias = np.zeros((self.neurons), dtype=self.dtype)
 
 
     def forward(self, input: np.ndarray) -> np.ndarray:
         input = np.asarray(input, dtype=self.dtype)
+
+        if len(input.shape) != 2:
+            raise ValueError("Dense: Input must have shape (B,features)")
+
+        if input.shape[1] < 1:
+            raise ValueError("Dense: Input features must be 1 or more")
         
-        if input.shape != (input.shape[0], self.in_features,):
-            raise ValueError("Dense: Input shape must be (B,input_features). Flatten layer needs to be called")
+        if self.in_features is None:
+            self.in_features = input.shape[1]
+        elif self.in_features != input.shape[1]:
+            raise ValueError("Dense: Input features do not match attribute's in_features value")
+
+        if self.weights is None:
+            self._initialize_parameters()
         
         self.input = input
 
@@ -73,9 +84,6 @@ class Dense_layer:
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         dout = np.asarray(dout, dtype=self.dtype)
-
-        if self.input is None:
-            raise ValueError("Dense: Forward method needs to be called to get input")
 
         if self.output_shape is None:
             raise ValueError("Dense: Forward method needs to be called to get output shape")

@@ -61,8 +61,8 @@ class Conv_layer:
         self.padding = padding
         self.stride = stride
         self.rng = rng
-        self.initialization = initialization
-        self.distribution = distribution
+        self.initialization = initialization.strip().lower()
+        self.distribution = distribution.strip().lower()
         self.padded_input = None
         self.output_shape = None
         self.dtype = np.float32
@@ -70,7 +70,7 @@ class Conv_layer:
         self.weights = None
 
 
-    def _initialize_weights(self):
+    def _initialize_parameters(self):
         Kh = self.filter_shape[0]
         Kw = self.filter_shape[1]
         
@@ -78,23 +78,23 @@ class Conv_layer:
         fan_out = Kh * Kw * self.filters
 
         # Weights: He initialization
-        if self.initialization.strip().lower() == "he":
-            if self.distribution.strip().lower() == "normal":
+        if self.initialization == "he":
+            if self.distribution == "normal":
                 std = (2 / fan_in) ** 0.5
                 self.weights = self.rng.normal(loc=0, scale=std, size=(self.filters, Kh, Kw, self.in_channels))   # (F,Kh,Kw,Ch)
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif self.distribution.strip().lower() == "uniform":
+            elif self.distribution == "uniform":
                 limit = (6 / fan_in) ** 0.5
                 self.weights = self.rng.uniform(low=-limit, high=limit, size=(self.filters, Kh, Kw, self.in_channels))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         # Weights: Xavier initialization
-        elif self.initialization.strip().lower() == "xavier":
-            if self.distribution.strip().lower() == "normal":
+        elif self.initialization == "xavier":
+            if self.distribution == "normal":
                 std = (2 / (fan_in + fan_out)) ** 0.5
                 self.weights = self.rng.normal(loc=0, scale=std, size=(self.filters, Kh, Kw, self.in_channels))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
-            elif self.distribution.strip().lower() == "uniform":
+            elif self.distribution == "uniform":
                 limit = (6 / (fan_in + fan_out)) ** 0.5
                 self.weights = self.rng.uniform(low=-limit, high=limit, size=(self.filters, Kh, Kw, self.in_channels))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
@@ -126,7 +126,7 @@ class Conv_layer:
             raise ValueError(f"Conv: Layer was initialized with {self.in_channels} input channels")
         
         if self.weights is None:
-            self.weight_initialization()
+            self._initialize_parameters()
 
         # Padding
         arr = np.zeros((batch_size, img_height + self.padding * 2, img_width + self.padding * 2, self.in_channels), dtype=self.dtype)   # (B, H + 2P, W + 2P, Ch)
@@ -197,44 +197,21 @@ class Conv_layer:
         return din
 
 
-def benchmark_forward_backward(forward_func, backward_func, X, dout, repeats=10, warmup=3):
-    for _ in range(warmup):
-        forward_func(X)
-        backward_func(dout)
-
-    times = []
-
-    for _ in range(repeats):
-        start = time.perf_counter()
-
-        forward_func(X)
-        backward_func(dout)
-
-        end = time.perf_counter()
-        times.append(end - start)
-
-    return np.mean(times), np.min(times)
 
 def main():
-    rng = np.random.default_rng(42)
+    conv = Conv_layer(filters=8)
 
-    # Small input so the test stays easy to inspect
-    X = rng.normal(size=(32, 32, 32, 32)).astype(np.float32)
+    print(conv.weights)
 
-    conv = Conv_layer(in_channels=32, filters=64, filter_shape=(3, 3), padding=1, stride=1, rng=rng)
-    output = conv.forward_new(X)
-    dout = rng.normal(size=output.shape).astype(np.float32)
+    out = conv.forward(np.random.randn(2,32,32,3))
 
+    print(conv.weights.shape)
 
-    old_mean, old_min = benchmark_forward_backward(conv.forward_old, conv.backward_old, X, dout)
+    old_weights = conv.weights
 
-    new_mean, new_min = benchmark_forward_backward(conv.forward_new, conv.backward_new, X, dout)
+    out = conv.forward(np.random.randn(2,32,32,3))
 
-    speedup = old_mean / new_mean
-
-    print(f"Old forward + backward: {old_mean * 1000:.3f} ms")
-    print(f"New forward + backward: {new_mean * 1000:.3f} ms")
-    print(f"Total speedup: {speedup:.2f}x")
+    print(old_weights is conv.weights)
 
 
 if __name__ == "__main__":
