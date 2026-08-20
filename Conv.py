@@ -68,10 +68,9 @@ class Conv_layer:
         self.dtype = np.float32
 
         self.weights = None
-        self.bias = np.zeros((filters), dtype=self.dtype)
 
 
-    def weight_initialization(self):
+    def _initialize_weights(self):
         Kh = self.filter_shape[0]
         Kw = self.filter_shape[1]
         
@@ -99,6 +98,8 @@ class Conv_layer:
                 limit = (6 / (fan_in + fan_out)) ** 0.5
                 self.weights = self.rng.uniform(low=-limit, high=limit, size=(self.filters, Kh, Kw, self.in_channels))
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
+
+        self.bias = np.zeros((self.filters), dtype=self.dtype)
 
 
     def forward(self, input_img: np.ndarray) -> np.ndarray:
