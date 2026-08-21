@@ -88,12 +88,10 @@ def main():
             for layer in reversed(layers):
                 dlogits = layer.backward(dlogits)
 
-            # ----- Trainable parameters -----
 
             parameters_and_grads = [(conv1.weights, conv1.dweights), (conv1.bias, conv1.dbias), (conv2.weights, conv2.dweights), (conv2.bias, conv2.dbias),
-                    (conv3.weights, conv3.dweights), (conv3.bias, conv3.dbias), (conv4.weights, conv4.dweights), (conv4.bias, conv4.dbias),
-                    (dense1.weights, dense1.dweights), (dense1.bias, dense1.dbias), (dense2.weights, dense2.dweights), (dense2.bias, dense2.dbias)]
-
+                (conv3.weights, conv3.dweights), (conv3.bias, conv3.dbias), (conv4.weights, conv4.dweights), (conv4.bias, conv4.dbias),
+                (dense1.weights, dense1.dweights), (dense1.bias, dense1.dbias), (dense2.weights, dense2.dweights), (dense2.bias, dense2.dbias)]
 
             # ----- Update -----
 

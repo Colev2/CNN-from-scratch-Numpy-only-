@@ -23,10 +23,11 @@ class Dense_layer:
         self.initialization = initialization.strip().lower()
         self.distribution = distribution
         self.output_shape = None
-
         self.in_features = None
         self.weights = None
+        self.built = False
         self.dtype = np.float32
+
 
     def _initialize_parameters(self):
         fan_in = self.in_features
@@ -57,22 +58,40 @@ class Dense_layer:
         self.bias = np.zeros((self.neurons), dtype=self.dtype)
 
 
+    def build(self, input_shape: tuple):
+        # Check if it has already been built
+
+        if self.built:
+            raise RuntimeError("Dense: Layer has already been built")
+        
+        # input_shape = (features,)
+
+        if len(input_shape) != 1:
+            raise ValueError("Dense: Build expects input shape (features,)")
+
+        if input_shape[0] < 1:
+            raise ValueError("Dense: Build features must be greater than 0")
+
+        self.in_features = input_shape[0]
+
+        self._initialize_parameters()
+
+        self.built = True
+
+        return (self.neurons,)
+
+
     def forward(self, input: np.ndarray) -> np.ndarray:
+        if not self.built:
+            raise RuntimeError("Dense layer must be built before forward")
+        
         input = np.asarray(input, dtype=self.dtype)
 
-        if len(input.shape) != 2:
+        if input.ndim != 2:
             raise ValueError("Dense: Input must have shape (B,features)")
-
-        if input.shape[1] < 1:
-            raise ValueError("Dense: Input features must be 1 or more")
         
-        if self.in_features is None:
-            self.in_features = input.shape[1]
-        elif self.in_features != input.shape[1]:
+        if self.in_features != input.shape[1]:
             raise ValueError("Dense: Input features do not match attribute's in_features value")
-
-        if self.weights is None:
-            self._initialize_parameters()
         
         self.input = input
 
@@ -94,16 +113,18 @@ class Dense_layer:
         # z = Wx + b
 
         # θL/θx_j = Σ_i (θL/θz_i * w_ij) = Σ_i (dout_i * w_ij)
-        dL_dx = dout @ self.weights     # (B,neurons) @ (neurons,features)  ->  (B,features)
+        din = dout @ self.weights     # (B,neurons) @ (neurons,features)  ->  (B,features)
 
         # θL/θb_i = θL/θz_i = dout_i
-        dL_db = np.sum(dout, axis=0)
+        self.dbias = np.sum(dout, axis=0)
 
         # θL/θw_ij = θL/θz_i * x_j = dout_i * x_j
-        dL_dw = dout.T @ self.input
-
-        self.dweights = dL_dw
-        self.dbias = dL_db
-        din = dL_dx
+        self.dweights = dout.T @ self.input
 
         return din
+
+
+    def parameters(self):
+        parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
+
+        return parameters

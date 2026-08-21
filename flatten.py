@@ -2,23 +2,46 @@ import numpy as np
 
 class Flatten_layer:
     def __init__(self):
-        self.dtype = np.float32
         self.input_shape = None
         self.output_shape = None
+        self.built = False
+        self.dtype = np.float32
 
+
+    def build(self, input_shape):
+        if self.built:
+            raise RuntimeError("Flatten: Layer has already been built")
+
+        if len(input_shape) != 3:
+            raise ValueError("Flatten: Build expects input shape (H,W,C)")
+
+        height, width, channels = input_shape
+
+        if height <= 0 or width <= 0 or channels <= 0:
+            raise ValueError("Flatten: Input dimensions must be greater than 0")
+
+        self.built_shape = input_shape
+
+        self.built = True
+
+        return (height * width * channels,)
+
+    
     def forward(self, input: np.ndarray) -> np.ndarray:
         if input.ndim != 4:
             raise ValueError("Flatten: Input must have shape (B,H,W,C)")
         
         input = np.asarray(input, self.dtype)
-        
         self.input_shape = input.shape
 
-        output = np.reshape(input, shape=(input.shape[0], -1))
+        if self.built_shape != self.input_shape[1:]:
+            raise ValueError("Flatten: Layer was built with different shape than forward's input")
 
+        output = np.reshape(input, shape=(input.shape[0], -1))      # (B,H*W*C)
         self.output_shape = output.shape
 
         return output
+
 
     def backward(self, dout: np.ndarray) -> np.ndarray:
         if self.input_shape is None:
@@ -33,4 +56,9 @@ class Flatten_layer:
         din = np.reshape(dout, shape=self.input_shape)
 
         return din
+
+
+    def parameters(self):
+
+        return []
         

@@ -4,24 +4,55 @@ import time
 class MaxPooling2D_layer:
     def __init__(self, pool_size=(2,2), stride=2):
         if pool_size[0] < 1 or pool_size[1] < 1:
-            raise ValueError("pooling window must contain at least 1 element")
+            raise ValueError("MaxPooling: Pooling window must contain at least 1 element")
 
         if stride < 1:
-            raise ValueError("stride must be 1 or greater")
+            raise ValueError("MaxPooling: Stride must be greater than 0")
         
         self.pool_size = pool_size
         self.stride = stride
         self.input_shape = None
         self.output_shape = None
         self.max_element_idxs = None
+        self.built = False
         self.dtype = np.float32
 
+
+    def build(self, input_shape):
+        if self.built:
+            raise RuntimeError("MaxPool: Layer has already been built")
+
+        if len(input_shape) != 3:
+            raise ValueError("MaxPool: Build expects input shape (H,W,C)")
+
+        height, width, channels = input_shape
+
+        if height <= 0 or width <= 0 or channels <= 0:
+            raise ValueError("MaxPool: Input dimensions must be greater than 0")
+
+        Hout = int(np.floor((height - self.pool_size[0]) / self.stride)) + 1
+
+        Wout = int(np.floor((width - self.pool_size[1]) / self.stride)) + 1
+
+        if Hout <= 0 or Wout <= 0:
+            raise ValueError("MaxPool: Pool dimensions must not be greater than input dimensions")
+
+        self.built_shape = input_shape
+
+        self.built = True
+
+        return (Hout, Wout, channels)
+    
 
     def forward(self, input: np.ndarray) -> np.ndarray:
         input = np.asarray(input, dtype=self.dtype)
 
         if input.ndim != 4:
-            raise ValueError("Input in MaxPooling layer must be of shape (B,H,W,C)")
+            raise ValueError("MaxPooling: Input must be of shape (B,H,W,C)")
+        
+        self.input_shape = input.shape
+        if self.built_shape != self.input_shape[1:]:
+            raise ValueError("MaxPooling: Layer was built with different shape than forward's input")
         
         batch_size = input.shape[0]
         height = input.shape[1]
@@ -31,13 +62,11 @@ class MaxPooling2D_layer:
         Pw = self.pool_size[1] 
 
         if batch_size <= 0 or height <= 0 or width <= 0 or channels <= 0:
-            raise ValueError("MaxPooling input dimensions' size must be 1 or greater ")
+            raise ValueError("MaxPooling: Input dimensions' size must be greater than 0")
 
         if Ph > height or Pw > width:
-            raise ValueError("MaxPooling window dimensions can't be greater than input dimensions")
-
-
-        self.input_shape = input.shape
+            raise ValueError("MaxPooling: Window dimensions can't be greater than input dimensions")
+        
         self.output_height = int(np.floor((height - Ph) / self.stride)) + 1
         self.output_width = int(np.floor((width - Pw) / self.stride)) + 1
         self.output_shape = (batch_size, self.output_height, self.output_width, channels)  # (B,Hout,Wout,Ch)
@@ -79,3 +108,6 @@ class MaxPooling2D_layer:
         return din
 
 
+    def parameters(self):
+
+        return []

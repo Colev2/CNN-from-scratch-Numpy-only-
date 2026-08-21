@@ -3,10 +3,33 @@ import numpy as np
 class ReLU_layer:
     def __init__(self):
         self.positive_input_mask = None
+        self.built = False
         self.dtype = np.float32
+
+
+    def build(self, input_shape):
+        if self.built:
+            raise RuntimeError("ReLU: Layer has already been built")
+
+        if len(input_shape) < 1:
+            raise ValueError("ReLU: Build expects a non-empty input shape")
+
+        for dim in input_shape:
+            if dim <= 0:
+                raise ValueError("ReLU: Input dimensions must be greater than 0")
+
+        self.built_shape = input_shape
+
+        self.built = True
+
+        return input_shape
+
 
     def forward(self, input: np.ndarray) -> np.ndarray:
         input = np.asarray(input, dtype=self.dtype)
+
+        if self.built_shape != input.shape[1:]:
+            raise ValueError("ReLU: Layer was built with different shape than forward's input")
 
         output = np.maximum(0, input)
 
@@ -27,6 +50,11 @@ class ReLU_layer:
         din = dout * self.positive_input_mask
 
         return din
+
+
+    def parameters(self):
+
+        return []
 
 
 def main():

@@ -1,12 +1,19 @@
 import numpy as np
-import copy
+from conv import Conv_layer
+from relu import ReLU_layer
+from dense import Dense_layer
+from maxpooling import MaxPooling2D_layer
+from flatten import Flatten_layer
 
-a = np.array([1, 2, 3])
+rng = np.random.default_rng(42)
 
-x = [a]
-y = copy.deepcopy(x)
-a[0] = 99
-print(a)
-print(x)
-print(y)
+layers = [Conv_layer(filters=32, stride=1), ReLU_layer(), Conv_layer(filters=32), MaxPooling2D_layer(), Flatten_layer(), Dense_layer(neurons=256)]
+
+shape = (32,32,3)
+
+for layer in layers:
+    shape = layer.build(shape)
+    print(shape)
+
+parameters = []
 

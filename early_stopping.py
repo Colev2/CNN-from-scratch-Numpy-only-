@@ -1,5 +1,4 @@
 import numpy as np
-import copy
 
 class EarlyStopping:
     def __init__(self, patience: int, min_delta=0.001):

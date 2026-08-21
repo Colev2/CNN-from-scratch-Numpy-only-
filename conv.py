@@ -65,9 +65,10 @@ class Conv_layer:
         self.distribution = distribution.strip().lower()
         self.padded_input = None
         self.output_shape = None
-        self.dtype = np.float32
+        self.built = False
 
         self.weights = None
+        self.dtype = np.float32
 
 
     def _initialize_parameters(self):
@@ -102,11 +103,51 @@ class Conv_layer:
         self.bias = np.zeros((self.filters), dtype=self.dtype)
 
 
+    def build(self, input_shape):
+        # Check if its already built
+
+        if self.built:
+            raise RuntimeError("Conv: Layer has already been built")
+        
+        # input_shape = (H,W,C)
+
+        if len(input_shape) != 3:
+            raise ValueError("Conv: Build expects input shape (H,W,C)")
+
+        height, width, channels = input_shape
+
+        if height <= 0 or width <= 0 or channels <= 0:
+            raise ValueError("Conv: Image Height, Width and Channels must be greater than 0")
+
+        Hout = int(np.floor((height + 2 * self.padding - self.filter_shape[0]) / self.stride)) + 1
+        Wout = int(np.floor((width + 2 * self.padding - self.filter_shape[1]) / self.stride)) + 1
+
+        if Hout <= 0 or Wout <= 0:
+            raise ValueError("Conv: Padded image's dimensions must be greater than kernel dimensions")
+        
+        self.in_channels = channels
+
+        self.built_shape = input_shape
+
+        self._initialize_parameters()
+
+        self.built = True
+
+
+        return (Hout, Wout, self.filters)
+
+
     def forward(self, input_img: np.ndarray) -> np.ndarray:
+        if not self.built:
+            raise RuntimeError("Conv layer must be built before forward")
+        
         input_img = np.asarray(input_img, np.float32)
 
         if input_img.ndim != 4:
-            raise ValueError("Conv: Input image must have shape: (B,H,W,C) where B is the batch size, H and W are image's height and width, and C the channels of the image.")
+            raise ValueError("Conv: Input image must have shape: (B,H,W,C)")
+
+        if self.built_shape != input_img.shape[1:]:
+            raise ValueError("Conv: Layer was built with different shape than forward's input")
 
         batch_size = input_img.shape[0]
         img_height = input_img.shape[1]
@@ -115,18 +156,13 @@ class Conv_layer:
         Kw = self.filter_shape[1]
         
         if img_height <= 0 or img_width <= 0:
-            raise ValueError("Conv: Image Height and Width must be 1 or greater")
+            raise ValueError("Conv: Image Height, Width must be greater than 0")
 
         if batch_size <= 0 :
             raise ValueError("Conv: Batch size must be greater than 0")
 
-        if self.in_channels is None:
-            self.in_channels = input_img.shape[3]
-        elif self.in_channels != input_img.shape[3]:
+        if self.in_channels != input_img.shape[3]:
             raise ValueError(f"Conv: Layer was initialized with {self.in_channels} input channels")
-        
-        if self.weights is None:
-            self._initialize_parameters()
 
         # Padding
         arr = np.zeros((batch_size, img_height + self.padding * 2, img_width + self.padding * 2, self.in_channels), dtype=self.dtype)   # (B, H + 2P, W + 2P, Ch)
@@ -136,8 +172,12 @@ class Conv_layer:
         if Kh > self.padded_input.shape[1] or Kw > self.padded_input.shape[2]:
             raise ValueError("Conv: Filter dimensions must not be greater than padded image dimensions")
 
-        Hout = int(np.floor((img_height + 2*self.padding - Kh) / self.stride)) + 1
-        Wout = int(np.floor((img_width + 2*self.padding - Kw) / self.stride)) + 1
+        Hout = int(np.floor((img_height + 2 * self.padding - Kh) / self.stride)) + 1
+        Wout = int(np.floor((img_width + 2 * self.padding - Kw) / self.stride)) + 1
+
+        if Hout <= 0 or Wout <= 0:
+            raise ValueError("Conv: Padded image's dimensions must be greater than kernel dimensions")
+        
         self.output_shape = (batch_size, Hout, Wout, self.filters) # (B,H,W,F)
 
         all_adjacent_windows = np.lib.stride_tricks.sliding_window_view(self.padded_input, window_shape=(Kh,Kw), axis=(1,2))   # sliding_window_view uses stride=1 by default  
@@ -174,11 +214,14 @@ class Conv_layer:
         windows = windows.transpose(0, 1, 2, 4, 5, 3) # (B,Hout,Wout,Kh,Kw,C)
         flat_windows = np.reshape(windows, shape=(batch_size * windows.shape[1] * windows.shape[2], Kh * Kw * self.in_channels))  # (B*Hout*Wout, Kh*Kw*C)
 
-        dL_db = np.sum(dout, axis=(0,1,2))  # (F,)
+        # dL/db
+        self.dbias = np.sum(dout, axis=(0,1,2))  # (F,)
 
+        # dL/dw
         dL_dw_flat = flat_dout.T @ flat_windows    # (F,Kh*Kw*C)
-        dL_dw = np.reshape(dL_dw_flat, shape=(-1, Kh, Kw, self.in_channels))  # (F,Kh,Kw,C)
+        self.dweights = np.reshape(dL_dw_flat, shape=(-1, Kh, Kw, self.in_channels))  # (F,Kh,Kw,C)
 
+        # dL/dx
         dL_dx_padded = np.zeros_like(self.padded_input)
         flat_weights = np.reshape(self.weights, shape=(self.filters, -1))   # (F,Kh*Kw*C)
         dwindows_flat = flat_dout @ flat_weights # (B*Hout*Wout,F) @ (F,Kh*Kw*C) -> (B*Hout*Wout,Khw*Kw*C)
@@ -188,13 +231,15 @@ class Conv_layer:
             for kc in range(Kw):
                 dL_dx_padded[:, kr:kr + Hout * self.stride:self.stride, kc:kc + Wout * self.stride:self.stride, :] += dwindows[:, :, :, kr, kc, :]
 
-        dL_dx = dL_dx_padded[:, self.padding:self.padded_input.shape[1] - self.padding, self.padding:self.padded_input.shape[2] - self.padding, :]  # (B,H,W,C)
-
-        self.dweights = dL_dw
-        self.dbias = dL_db
-        din = dL_dx
+        din = dL_dx_padded[:, self.padding:self.padded_input.shape[1] - self.padding, self.padding:self.padded_input.shape[2] - self.padding, :]  # (B,H,W,C)
 
         return din
+
+
+    def parameters(self):
+        parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
+
+        return parameters
 
 
 
