@@ -3,6 +3,8 @@ import numpy as np
 from project import create_batches, train_test_split, create_optimizer_object
 from cnn_numpy.optimizers import SGD, SGD_momentum, Adam
 from cnn_numpy.layers.batchnorm import BatchNorm
+from cnn_numpy.layers.dense import Dense
+from cnn_numpy.layers.conv import Conv2D
 
 
 def test_create_batches():
@@ -167,3 +169,171 @@ def test_batchnorm_backward_gradient():
     np.testing.assert_allclose(dgamma, numerical_dgamma, rtol=1e-5, atol=1e-6)
 
     np.testing.assert_allclose(dbeta, numerical_dbeta, rtol=1e-5, atol=1e-6)
+
+
+
+def test_dense_backward_gradient():
+    rng = np.random.default_rng(42)
+
+    x = rng.normal(size=(3, 4)).astype(np.float64)
+
+    dense = Dense(neurons=2, rng=rng, initialization="xavier", distribution="normal")
+
+    dense.build((4,))
+
+    out = dense.forward(x)
+
+    dout = rng.normal(size=out.shape).astype(np.float64)
+
+    # ---------- Analytical gradients ----------
+
+    dx = dense.backward(dout).copy()
+    dweights = dense.dweights.copy()
+    dbias = dense.dbias.copy()
+
+    epsilon = 1e-5
+
+    def loss():
+        out = dense.forward(x)
+        return np.sum(out * dout)
+
+    # ---------- Numerical dx ----------
+
+    dx_num = np.zeros_like(x)
+
+    for idx in np.ndindex(x.shape):
+        old_value = x[idx]
+
+        x[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        x[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        x[idx] = old_value
+
+        dx_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    # ---------- Numerical dweights ----------
+
+    dweights_num = np.zeros_like(dense.weights)
+
+    for idx in np.ndindex(dense.weights.shape):
+        old_value = dense.weights[idx]
+
+        dense.weights[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        dense.weights[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        dense.weights[idx] = old_value
+
+        dweights_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    # ---------- Numerical dbias ----------
+
+    dbias_num = np.zeros_like(dense.bias)
+
+    for idx in np.ndindex(dense.bias.shape):
+        old_value = dense.bias[idx]
+
+        dense.bias[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        dense.bias[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        dense.bias[idx] = old_value
+
+        dbias_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    np.testing.assert_allclose(dx, dx_num, rtol=1e-5, atol=1e-6)
+
+    np.testing.assert_allclose(dweights, dweights_num, rtol=1e-5, atol=1e-6)
+
+    np.testing.assert_allclose(dbias, dbias_num, rtol=1e-5, atol=1e-6)
+
+
+
+def test_conv_backward_gradient():
+    rng = np.random.default_rng(42)
+
+    x = rng.normal(size=(1, 3, 3, 1)).astype(np.float64)
+
+    conv = Conv2D(filters=2, filter_shape=(2, 2), padding=0, stride=1, rng=rng, initialization="xavier", distribution="normal")
+
+    conv.build((3, 3, 1))
+
+    out = conv.forward(x)
+
+    dout = rng.normal(size=out.shape).astype(np.float64)
+
+    # ---------- Analytical gradients ----------
+
+    dx = conv.backward(dout).copy()
+    dweights = conv.dweights.copy()
+    dbias = conv.dbias.copy()
+
+    epsilon = 1e-5
+
+    def loss():
+        out = conv.forward(x)
+        return np.sum(out * dout)
+
+    # ---------- Numerical dx ----------
+
+    dx_num = np.zeros_like(x)
+
+    for idx in np.ndindex(x.shape):
+        old_value = x[idx]
+
+        x[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        x[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        x[idx] = old_value
+
+        dx_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    # ---------- Numerical dweights ----------
+
+    dweights_num = np.zeros_like(conv.weights)
+
+    for idx in np.ndindex(conv.weights.shape):
+        old_value = conv.weights[idx]
+
+        conv.weights[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        conv.weights[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        conv.weights[idx] = old_value
+
+        dweights_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    # ---------- Numerical dbias ----------
+
+    dbias_num = np.zeros_like(conv.bias)
+
+    for idx in np.ndindex(conv.bias.shape):
+        old_value = conv.bias[idx]
+
+        conv.bias[idx] = old_value + epsilon
+        loss_plus = loss()
+
+        conv.bias[idx] = old_value - epsilon
+        loss_minus = loss()
+
+        conv.bias[idx] = old_value
+
+        dbias_num[idx] = (loss_plus - loss_minus) / (2 * epsilon)
+
+    np.testing.assert_allclose(dx, dx_num, rtol=1e-5, atol=1e-6)
+
+    np.testing.assert_allclose(dweights, dweights_num, rtol=1e-5, atol=1e-6)
+
+    np.testing.assert_allclose(dbias, dbias_num, rtol=1e-5, atol=1e-6)

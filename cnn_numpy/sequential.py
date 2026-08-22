@@ -1,8 +1,8 @@
 import numpy as np
-from conv import Conv_layer
-from relu import ReLU_layer
-from flatten import Flatten_layer
-from dense import Dense_layer
+from cnn_numpy.layers.conv import Conv_layer
+from cnn_numpy.layers.relu import ReLU_layer
+from cnn_numpy.layers.flatten import Flatten_layer
+from cnn_numpy.layers.dense import Dense_layer
 
 class Sequential:
     def __init__(self, layers: list):

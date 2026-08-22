@@ -9,7 +9,7 @@ class BatchNorm:
         
         self.epsilon = epsilon
         self.momentum = momentum
-        self.dtype = np.float64
+        self.dtype = np.float32
 
         self.built = False
         self.training = True
