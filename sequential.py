@@ -8,6 +8,8 @@ class Sequential:
     def __init__(self, layers: list):
         self.layers = layers
         self.built = False
+        self.output_shape = None
+
 
     def build(self, input_shape):
         if self.built:
@@ -18,7 +20,9 @@ class Sequential:
 
         self.built = True
 
-        return input_shape
+        self.output_shape = input_shape
+
+        return self.output_shape
 
 
     def forward(self, x):
@@ -30,19 +34,74 @@ class Sequential:
 
         return x        # Logits
 
+
     def backward(self, dout):
+        if not self.built:
+            raise RuntimeError("Model must be built before backward")
+        
         for layer in reversed(self.layers):
             dout = layer.backward(dout)
 
-        return dout     # dLogits
+        return dout   
+    
 
     def parameters(self):
+        if not self.built:
+            raise RuntimeError("Sequential: Model needs to be built")
+        
         params = []
         for layer in self.layers:
             params.extend(layer.parameters())
 
         return params
 
+
+    def get_weights(self):
+        weights = []
+
+        for layer in self.layers:
+            weights.append(layer.get_weights())
+
+        return weights
+
+
+    def set_weights(self, weights):
+        if not self.built:
+            raise RuntimeError("Sequential: Model needs to be built")
+        
+        if len(weights) != len(self.layers):
+            raise ValueError("Sequential: Number of weight groups must match number of layers")
+
+        for layer, layer_weights in zip(self.layers, weights):
+            layer.set_weights(layer_weights)
+
+
+    def train(self):
+        for layer in self.layers:
+            layer.train()
+
+
+    def eval(self):
+        for layer in self.layers:
+            layer.eval()
+
+
+    def regularizable_parameters(self):
+        params = []
+
+        for layer in self.layers:
+            params.extend(layer.regularizable_parameters())
+
+        return params
+
+
+    def l2_loss(self, l2_lambda):
+        loss = 0
+
+        for w in self.regularizable_parameters():
+            loss += np.sum(w ** 2)
+
+        return l2_lambda * loss
 
 
 def main():

@@ -4,6 +4,7 @@ class ReLU_layer:
     def __init__(self):
         self.positive_input_mask = None
         self.built = False
+        self.training = True
         self.dtype = np.float32
 
 
@@ -54,6 +55,27 @@ class ReLU_layer:
 
     def parameters(self):
 
+        return []
+
+
+    def get_weights(self):
+
+        return []
+
+
+    def set_weights(self, weights):
+        pass
+
+
+    def train(self):
+        self.training = True
+
+
+    def eval(self):
+        self.training = False
+
+
+    def regularizable_parameters(self):
         return []
 
 

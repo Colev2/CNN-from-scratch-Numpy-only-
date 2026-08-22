@@ -5,6 +5,7 @@ class Flatten_layer:
         self.input_shape = None
         self.output_shape = None
         self.built = False
+        self.training = True
         self.dtype = np.float32
 
 
@@ -60,5 +61,26 @@ class Flatten_layer:
 
     def parameters(self):
 
+        return []
+
+
+    def get_weights(self):
+
+        return []
+
+
+    def set_weights(self, weights):
+        pass
+
+
+    def train(self):
+        self.training = True
+
+
+    def eval(self):
+        self.training = False
+
+
+    def regularizable_parameters(self):
         return []
         

@@ -7,17 +7,16 @@ class EarlyStopping:
         self.best_val_loss = np.inf
         self.counter = 0
         self.best_epoch = None
-        self.best_parameters = []
+        self.best_weights = None
 
 
-    def step(self, val_loss: float, current_parameters: list[np.ndarray], epoch: int) -> tuple[bool, list[np.ndarray]]:
+
+    def step(self, model: object, val_loss: float, epoch: int) -> bool:
         if val_loss < self.best_val_loss - self.min_delta:
-            self.best_val_loss = val_loss
             self.counter = 0
+            self.best_val_loss = val_loss
             self.best_epoch = epoch
-            self.best_parameters = []
-            for parameter in current_parameters:
-                self.best_parameters.append(parameter.copy())
+            self.best_weights = model.get_weights()
         else:
             self.counter += 1
 
@@ -25,5 +24,11 @@ class EarlyStopping:
         if self.counter >= self.patience:
             stop = True
 
-        return stop, self.best_parameters
+        return stop
+
+
+    def restore_best_weights(self, model: object):
+        model.set_weights(self.best_weights)
+
+        print(f"Best weights are at epoch: {self.best_epoch + 1}")
 

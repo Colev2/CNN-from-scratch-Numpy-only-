@@ -66,6 +66,7 @@ class Conv_layer:
         self.padded_input = None
         self.output_shape = None
         self.built = False
+        self.training = True
 
         self.weights = None
         self.dtype = np.float32
@@ -102,10 +103,12 @@ class Conv_layer:
 
         self.bias = np.zeros((self.filters), dtype=self.dtype)
 
+        # Gradients
+        self.dweights = np.zeros_like(self.weights)
+        self.dbias = np.zeros_like(self.bias)
+
 
     def build(self, input_shape):
-        # Check if its already built
-
         if self.built:
             raise RuntimeError("Conv: Layer has already been built")
         
@@ -132,7 +135,6 @@ class Conv_layer:
         self._initialize_parameters()
 
         self.built = True
-
 
         return (Hout, Wout, self.filters)
 
@@ -215,11 +217,11 @@ class Conv_layer:
         flat_windows = np.reshape(windows, shape=(batch_size * windows.shape[1] * windows.shape[2], Kh * Kw * self.in_channels))  # (B*Hout*Wout, Kh*Kw*C)
 
         # dL/db
-        self.dbias = np.sum(dout, axis=(0,1,2))  # (F,)
+        self.dbias[...] = np.sum(dout, axis=(0,1,2))  # (F,)
 
         # dL/dw
         dL_dw_flat = flat_dout.T @ flat_windows    # (F,Kh*Kw*C)
-        self.dweights = np.reshape(dL_dw_flat, shape=(-1, Kh, Kw, self.in_channels))  # (F,Kh,Kw,C)
+        self.dweights[...] = np.reshape(dL_dw_flat, shape=(-1, Kh, Kw, self.in_channels))  # (F,Kh,Kw,C)
 
         # dL/dx
         dL_dx_padded = np.zeros_like(self.padded_input)
@@ -240,6 +242,28 @@ class Conv_layer:
         parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
 
         return parameters
+
+
+    def get_weights(self):
+
+        return [self.weights.copy(), self.bias.copy()]
+
+
+    def set_weights(self, weights:list):
+        self.weights[...] = weights[0]
+        self.bias[...] = weights[1]
+
+
+    def train(self):
+        self.training = True
+
+
+    def eval(self):
+        self.training = False
+
+
+    def regularizable_parameters(self):
+        return [self.weights]
 
 
 

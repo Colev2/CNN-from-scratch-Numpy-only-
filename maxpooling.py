@@ -15,6 +15,7 @@ class MaxPooling2D_layer:
         self.output_shape = None
         self.max_element_idxs = None
         self.built = False
+        self.training = True
         self.dtype = np.float32
 
 
@@ -110,4 +111,25 @@ class MaxPooling2D_layer:
 
     def parameters(self):
 
+        return []
+
+
+    def get_weights(self):
+
+        return []
+
+
+    def set_weights(self, weights):
+        pass
+
+
+    def train(self):
+        self.training = True
+
+
+    def eval(self):
+        self.training = False
+
+
+    def regularizable_parameters(self):
         return []

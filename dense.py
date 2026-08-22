@@ -26,6 +26,7 @@ class Dense_layer:
         self.in_features = None
         self.weights = None
         self.built = False
+        self.training = True
         self.dtype = np.float32
 
 
@@ -56,6 +57,10 @@ class Dense_layer:
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
 
         self.bias = np.zeros((self.neurons), dtype=self.dtype)
+
+        # Gradients
+        self.dweights = np.zeros_like(self.weights)
+        self.dbias = np.zeros_like(self.bias)
 
 
     def build(self, input_shape: tuple):
@@ -116,15 +121,37 @@ class Dense_layer:
         din = dout @ self.weights     # (B,neurons) @ (neurons,features)  ->  (B,features)
 
         # θL/θb_i = θL/θz_i = dout_i
-        self.dbias = np.sum(dout, axis=0)
+        self.dbias[...] = np.sum(dout, axis=0)
 
         # θL/θw_ij = θL/θz_i * x_j = dout_i * x_j
-        self.dweights = dout.T @ self.input
+        self.dweights[...] = dout.T @ self.input
 
         return din
 
-
+    # Weights + Gradients
     def parameters(self):
         parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
 
         return parameters
+
+
+    def get_weights(self):
+
+        return [self.weights.copy(), self.bias.copy()]
+
+
+    def set_weights(self, weights:list):
+        self.weights[...] = weights[0]
+        self.bias[...] = weights[1]
+
+
+    def train(self):
+        self.training = True
+
+
+    def eval(self):
+        self.training = False
+
+
+    def regularizable_parameters(self):
+        return [self.weights]

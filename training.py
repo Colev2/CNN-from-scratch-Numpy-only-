@@ -4,8 +4,11 @@ from relu import ReLU_layer
 from maxpooling import MaxPooling2D_layer
 from flatten import Flatten_layer
 from dense import Dense_layer
+from dropout import Dropout
 from softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
 from optimizer import SGD, SGD_momentum, Adam
+from sequential import Sequential
+from early_stopping import EarlyStopping
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 
 
@@ -13,11 +16,11 @@ def main():
     dataset_class = get_dataset_class()
     train_data, labels, X_test, y_test = load_dataset(dataset_class)
     epochs = get_epochs()
-    initialization = input("Choose weights' initialization for Convolutional Layers (He or Xavier): ")
-    distribution = input("Choose weights' distribution for Convolutional Layers (Uniform or Normal): ")
+    initialization = get_initialization()
+    distribution = get_distribution()
     learning_rate = get_learning_rate()
     optimizer_class = get_optimizer_class()
-    optimizer = create_optimizer_object(optimizer_class, learning_rate)
+    weight_decay = get_weight_decay()
 
     rng = np.random.default_rng(42)
 
@@ -40,101 +43,54 @@ def main():
     X_test -= mean
     X_test /= std
 
-    conv1 = Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
-    relu1 = ReLU_layer()
-    conv2 = Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
-    relu2 = ReLU_layer()
-    maxpool1 = MaxPooling2D_layer(pool_size=(2,2), stride=2)
-    conv3 = Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng, initialization=initialization, distribution=distribution)
-    relu3 = ReLU_layer()
-    conv4 = Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution)
-    relu4 = ReLU_layer()
-    maxpool2 = MaxPooling2D_layer(pool_size=(2,2), stride=2)
-    flatten = Flatten_layer()
-    dense1 = Dense_layer(neurons=256, rng=rng, initialization="he", distribution="normal")
-    relu5 = ReLU_layer()
-    dense2 = Dense_layer(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal")
-    loss = SoftmaxCrossEntropyLoss()
+    model = Sequential([
+        Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        ReLU_layer(),
+        Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        ReLU_layer(),
+        MaxPooling2D_layer(pool_size=(2,2), stride=2),
+        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng, initialization=initialization, distribution=distribution),
+        ReLU_layer(),
+        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        ReLU_layer(),
+        MaxPooling2D_layer(pool_size=(2,2), stride=2),
+        Flatten_layer(),
+        Dense_layer(neurons=256, rng=rng, initialization="he", distribution="normal"),
+        ReLU_layer(),
+        Dropout(drop_prob=0.4, rng=rng),
+        Dense_layer(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
+            ])
 
-    layers = [conv1, relu1, conv2, relu2, maxpool1, conv3, relu3, conv4, relu4, maxpool2, flatten, dense1, relu5, dense2]
+    model.build(X_train.shape[1:])
+    optimizer = create_optimizer_object(optimizer_class, model.parameters(), model.regularizable_parameters(), learning_rate, l2_lambda=weight_decay)
 
-    # Create validation batches outside of for loop since they don't need shuffling every epoch
-    validation_batches = create_batches(X_val, y_val, batch_size=32, rng=rng)
+    # Early Stopping
+    early_stopping = EarlyStopping(patience=3, min_delta=1e-3)
 
     # Training
     for epoch in range(epochs):
-        # Create batches that shuffle each epoch
-        train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng)    # [(X_batch_0, y_batch_0), (X_batch_1, y_batch_1), ...]
+        train_loss, train_l2_loss, train_total_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng)
 
-        correct_predictions_train = 0
-        sample_loss_sum_train = 0
-        correct_predictions_val = 0
-        sample_loss_sum_val = 0
-        
-        for X_train_batch, y_train_batch in train_batches:
-            x = X_train_batch
+        val_loss, val_accuracy = evaluate(model, X_val, y_val)
 
-            # ----- Forward -----
-
-            for layer in layers:
-                x = layer.forward(x)
-                
-            batched_logits_train = x
-            batch_loss_train = loss.forward(batched_logits_train, y_train_batch)  
-
-            # ----- Backward -----
-
-            dlogits = loss.backward()
-            for layer in reversed(layers):
-                dlogits = layer.backward(dlogits)
-
-
-            parameters_and_grads = [(conv1.weights, conv1.dweights), (conv1.bias, conv1.dbias), (conv2.weights, conv2.dweights), (conv2.bias, conv2.dbias),
-                (conv3.weights, conv3.dweights), (conv3.bias, conv3.dbias), (conv4.weights, conv4.dweights), (conv4.bias, conv4.dbias),
-                (dense1.weights, dense1.dweights), (dense1.bias, dense1.dbias), (dense2.weights, dense2.dweights), (dense2.bias, dense2.dbias)]
-
-            # ----- Update -----
-
-            optimizer.update(parameters_and_grads)
-
-            # ----- Sum of sample losses -----
-
-            sample_loss_sum_train += batch_loss_train * len(y_train_batch)
-
-            # ----- Accuracy -----
-
-            predicted_class_idx = np.argmax(batched_logits_train, axis=1)
-            correct_predictions_train += np.count_nonzero(predicted_class_idx == y_train_batch)
-
-        train_accuracy = (correct_predictions_train / len(y_train)) * 100
-
-        # ----- Validation Pass -----
-            
-        for X_val_batch, y_val_batch in validation_batches:
-            x = X_val_batch
-            for layer in layers:
-                x = layer.forward(x)
-
-            logits_val = x
-            batch_loss_val = loss.forward(logits_val, y_val_batch)
-
-            # ----- Sum of sample losses -----
-
-            sample_loss_sum_val += batch_loss_val * len(y_val_batch)
-
-            # ----- Accuracy ------
-
-            predicted_class_idx = np.argmax(logits_val, axis=1)
-            correct_predictions_val += np.count_nonzero(predicted_class_idx == y_val_batch)
-
-        val_accuracy = (correct_predictions_val / X_val.shape[0]) * 100
-
-        print(f"Epoch {epoch + 1}: "
-            f"train_accuracy = {train_accuracy:.2f}%, "
-            f"train_loss = {sample_loss_sum_train / len(y_train):.2f} | "
-            f"val_accuracy = {val_accuracy:.2f}%, "
-            f"val_loss = {sample_loss_sum_val / len(y_val):.2f}"
+        print(
+            f"Epoch {epoch + 1}: "
+            f"train_acc = {train_accuracy:.2f}% | "
+            f"train_data_loss = {train_loss:.3f}, "
+            f"train_l2_loss = {train_l2_loss:.3f}, "
+            f"train_total_loss = {train_total_loss:.3f} | "
+            f"val_acc = {val_accuracy:.2f}%, "
+            f"val_loss = {val_loss:.3f}"
             )
+
+        stop = early_stopping.step(model, val_loss=val_loss, epoch=epoch)
+        if stop:
+            break
+
+    # Restore best weights
+    early_stopping.restore_best_weights(model)
+
+
 
 
 def get_dataset_class():
@@ -204,6 +160,22 @@ def get_epochs():
     return epochs
 
 
+def get_initialization():
+    initialization = input("Choose weights' initialization for Convolutional Layers (He or Xavier): ").strip().lower()
+    if initialization not in ["he", "xavier"]:
+        raise ValueError("Initialization must be either He or Xavier")
+
+    return initialization
+
+
+def get_distribution():
+    distribution = input("Choose weights' distribution for Convolutional Layers (Uniform or Normal): ").strip().lower()
+    if distribution not in ["uniform", "normal"]:
+        raise ValueError("Distribution must be either Uniform or Normal")
+
+    return distribution
+
+
 def get_learning_rate():
     try:
         learning_rate = float(input("Choose learning rate: "))
@@ -240,49 +212,33 @@ def get_optimizer_class():
     return optimizer_class
 
 
-def create_optimizer_object(optimizer_class, learning_rate):
+def create_optimizer_object(optimizer_class, parameters, regularizable_parameters, learning_rate, l2_lambda):
     if optimizer_class == SGD:
-        optimizer = SGD(learning_rate=learning_rate)
+        optimizer = SGD(parameters, regularizable_parameters, learning_rate, l2_lambda=l2_lambda)
     elif optimizer_class == SGD_momentum:
-        optimizer = SGD_momentum(learning_rate=learning_rate, momentum_coeff=0.9)
+        optimizer = SGD_momentum(parameters, regularizable_parameters, learning_rate, momentum_coeff=0.9, l2_lambda=l2_lambda)
     elif optimizer_class == Adam:
-        optimizer = Adam(learning_rate=learning_rate, b1=0.9, b2=0.999, epsilon=0.001)
+        optimizer = Adam(parameters, regularizable_parameters, learning_rate, b1=0.9, b2=0.999, epsilon=0.001, l2_lambda=l2_lambda)
 
     return optimizer
 
 
-def create_batches(X, y, batch_size, rng=None):
-    if rng is None:
-        rng = np.random.default_rng()
+def get_weight_decay():
+    try:
+        weight_decay = float(input("Give weight decay: "))
+        if weight_decay < 0 :
+            raise ValueError
+    except ValueError:
+        raise ValueError("Weight decay must be a non-negative float")
 
-    if X.shape[0] != y.shape[0]:
-        raise ValueError("Number of labels must be same as number of images")
-
-    if batch_size <= 0:
-        raise ValueError("Batch size must be greater than 0")
-
-    # Shuffle
-    indexes = np.arange(y.shape[0])
-    rng.shuffle(indexes)   # [2,0,5,3,10,...] -> random image indexes
-    y_shuffled = y[indexes]
-    X_shuffled = X[indexes]  
-
-    batches = []
-
-    for b in range(0, X.shape[0], batch_size):
-        X_batch = X_shuffled[b:b + batch_size, :, :, :]
-        y_batch = y_shuffled[b:b + batch_size]
-        batches.append((X_batch, y_batch))
-
-    return batches      # List of ndarrays: [(X_batch_1, y_batch_1), (X_batch2, y_batch_2), ...]
-
+    return weight_decay
 
 
 def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     if X.shape[0] != y.shape[0]:
         raise ValueError("Train_test_split: X sample size must be same as y sample size")
     
-    if not 0 <= validation_size <= 1:
+    if not 0 < validation_size < 1:
         raise ValueError("Train_test_split: split size must be between 0 and 1 inclusively")
     
     if rng is None:
@@ -316,6 +272,104 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
     return X_train, y_train, X_val, y_val
 
 
+def create_batches(X, y, batch_size, rng=None, shuffle=False):
+    if X.shape[0] != y.shape[0]:
+        raise ValueError("Number of labels must be same as number of images")
+
+    if batch_size <= 0:
+        raise ValueError("Batch size must be greater than 0")
+
+    indexes = np.arange(y.shape[0])
+
+    # Shuffle
+    if shuffle:
+        if rng is None:
+            rng = np.random.default_rng()
+        rng.shuffle(indexes)   # e.g: [2,0,5,3,10,...] -> random sample indexes
+
+    for b in range(0, X.shape[0], batch_size):
+        batch_indexes = indexes[b:b + batch_size]
+
+        X_batch = X[batch_indexes]
+        y_batch = y[batch_indexes]
+
+        yield X_batch, y_batch      # Return one batch at a time
+
+
+def train_epoch(model, X_train, y_train, optimizer, rng):
+    model.train()
+
+    correct_predictions_train = 0
+    sample_loss_sum_train = 0
+
+    loss = SoftmaxCrossEntropyLoss()
+
+    train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng, shuffle=True)    # [(X_batch_0, y_batch_0), (X_batch_1, y_batch_1), ...]
+    
+    for X_train_batch, y_train_batch in train_batches:
+        # ----- Forward -----
+
+        batched_logits_train = model.forward(X_train_batch)
+        batch_loss_train = loss.forward(batched_logits_train, y_train_batch)
+
+        # ----- Backward -----
+
+        dlogits = loss.backward()
+        model.backward(dlogits)
+
+        # ----- Update -----
+
+        optimizer.update()
+
+        # ----- Sum of sample losses -----
+        # (Σ_b (L_b) += batch_loss * B 
+
+        sample_loss_sum_train += batch_loss_train * len(y_train_batch)
+
+        # ----- Accuracy -----
+
+        predicted_class_idx = np.argmax(batched_logits_train, axis=1)
+        correct_predictions_train += np.count_nonzero(predicted_class_idx == y_train_batch)
+
+    train_accuracy = (correct_predictions_train / len(y_train)) * 100
+
+    train_loss = sample_loss_sum_train / len(y_train)
+    train_l2_loss = model.l2_loss(optimizer.l2_lambda)
+    train_total_loss = train_loss + train_l2_loss
+
+    return train_loss, train_l2_loss, train_total_loss, train_accuracy
+
+
+def evaluate(model, X, y):
+    model.eval()
+
+    correct_predictions = 0
+    sample_loss_sum = 0
+
+    loss = SoftmaxCrossEntropyLoss()
+
+    # ----- Evaluate -----
+
+    batches = create_batches(X, y, batch_size=32, shuffle=False)
+
+    for X_batch, y_batch in batches:
+        logits = model.forward(X_batch)
+        batch_loss = loss.forward(logits, y_batch)
+
+        # ----- Sum of sample losses -----
+        # (Σ_b (L_b) += batch_loss * B 
+
+        sample_loss_sum += batch_loss * len(y_batch)
+
+        # ----- Accuracy ------
+
+        predicted_class_idx = np.argmax(logits, axis=1)
+        correct_predictions += np.count_nonzero(predicted_class_idx == y_batch)
+
+    accuracy = (correct_predictions / X.shape[0]) * 100
+    average_loss = sample_loss_sum / len(y)
+
+    return average_loss, accuracy
 
     
 if __name__ == "__main__":
