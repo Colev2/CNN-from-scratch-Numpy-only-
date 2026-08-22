@@ -9,9 +9,6 @@ class ReLU_layer:
 
 
     def build(self, input_shape):
-        if self.built:
-            raise RuntimeError("ReLU: Layer has already been built")
-
         if len(input_shape) < 1:
             raise ValueError("ReLU: Build expects a non-empty input shape")
 

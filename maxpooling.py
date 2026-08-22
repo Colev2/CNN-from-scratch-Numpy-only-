@@ -20,9 +20,6 @@ class MaxPooling2D_layer:
 
 
     def build(self, input_shape):
-        if self.built:
-            raise RuntimeError("MaxPool: Layer has already been built")
-
         if len(input_shape) != 3:
             raise ValueError("MaxPool: Build expects input shape (H,W,C)")
 

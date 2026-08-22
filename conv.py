@@ -109,9 +109,6 @@ class Conv_layer:
 
 
     def build(self, input_shape):
-        if self.built:
-            raise RuntimeError("Conv: Layer has already been built")
-        
         # input_shape = (H,W,C)
 
         if len(input_shape) != 3:
@@ -140,9 +137,6 @@ class Conv_layer:
 
 
     def forward(self, input_img: np.ndarray) -> np.ndarray:
-        if not self.built:
-            raise RuntimeError("Conv layer must be built before forward")
-        
         input_img = np.asarray(input_img, np.float32)
 
         if input_img.ndim != 4:
@@ -249,7 +243,7 @@ class Conv_layer:
         return [self.weights.copy(), self.bias.copy()]
 
 
-    def set_weights(self, weights:list):
+    def set_weights(self, weights: list):
         self.weights[...] = weights[0]
         self.bias[...] = weights[1]
 

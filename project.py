@@ -6,10 +6,12 @@ from flatten import Flatten_layer
 from dense import Dense_layer
 from dropout import Dropout
 from softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
+from batchnorm import BatchNorm
 from optimizer import SGD, SGD_momentum, Adam
 from sequential import Sequential
 from early_stopping import EarlyStopping
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
+from pathlib import Path
 
 
 def main():
@@ -45,19 +47,33 @@ def main():
 
     model = Sequential([
         Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-5, momentum=0.9),
         ReLU_layer(),
+
         Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-5, momentum=0.9),
         ReLU_layer(),
+
         MaxPooling2D_layer(pool_size=(2,2), stride=2),
-        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=2, rng=rng, initialization=initialization, distribution=distribution),
-        ReLU_layer(),
+
         Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-5, momentum=0.9),
         ReLU_layer(),
+
+        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-5, momentum=0.9),
+        ReLU_layer(),
+
         MaxPooling2D_layer(pool_size=(2,2), stride=2),
+
         Flatten_layer(),
+
         Dense_layer(neurons=256, rng=rng, initialization="he", distribution="normal"),
+        BatchNorm(epsilon=1e-5, momentum=0.9),
         ReLU_layer(),
+
         Dropout(drop_prob=0.4, rng=rng),
+
         Dense_layer(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
             ])
 
@@ -89,6 +105,13 @@ def main():
 
     # Restore best weights
     early_stopping.restore_best_weights(model)
+
+    # Test evaluation
+    # test_loss, test_accuracy = evaluate(model, X_test, y_test)
+
+    # print(f"Test accuracy = {test_accuracy:.2f}% | "
+    #    f"Test loss = {test_loss:.3f}"
+    #   )
 
 
 
@@ -126,9 +149,12 @@ def get_dataset_class():
 
 
 def load_dataset(dataset_class: type):
-    data_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=True, download=True)
+    DATA_ROOT = Path(__file__).resolve().parent / "data"
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    
+    data_obj = dataset_class(root=str(DATA_ROOT), train=True, download=True)
 
-    test_set_obj = dataset_class(root="C:/Users/STAMATIS/Documents/CNN_numpy", train=False, download=True)
+    test_set_obj = dataset_class(root=str(DATA_ROOT), train=False, download=True)
 
     data = np.asarray(data_obj.data, dtype=np.float32)
     X_test = np.asarray(test_set_obj.data, dtype=np.float32)
@@ -218,7 +244,7 @@ def create_optimizer_object(optimizer_class, parameters, regularizable_parameter
     elif optimizer_class == SGD_momentum:
         optimizer = SGD_momentum(parameters, regularizable_parameters, learning_rate, momentum_coeff=0.9, l2_lambda=l2_lambda)
     elif optimizer_class == Adam:
-        optimizer = Adam(parameters, regularizable_parameters, learning_rate, b1=0.9, b2=0.999, epsilon=0.001, l2_lambda=l2_lambda)
+        optimizer = Adam(parameters, regularizable_parameters, learning_rate, b1=0.9, b2=0.999, epsilon=1e-8, l2_lambda=l2_lambda)
 
     return optimizer
 
@@ -239,7 +265,7 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
         raise ValueError("Train_test_split: X sample size must be same as y sample size")
     
     if not 0 < validation_size < 1:
-        raise ValueError("Train_test_split: split size must be between 0 and 1 inclusively")
+        raise ValueError("Train_test_split: split size must be between 0 and 1 exclusively")
     
     if rng is None:
         rng = np.random.default_rng()

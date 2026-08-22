@@ -18,9 +18,6 @@ class Dropout:
 
 
     def build(self, input_shape):
-        if self.built:
-            raise RuntimeError("Dropout: Layer has already been built")
-
         if len(input_shape) < 1:
             raise ValueError("Dropout: Build expects a non-empty input shape")
 
@@ -36,8 +33,6 @@ class Dropout:
 
 
     def forward(self, input: np.ndarray) -> np.ndarray:
-        if not self.built:
-            raise RuntimeError("Dropout layer must be built before forward")
         input = np.asarray(input, self.dtype)
 
         if self.training:

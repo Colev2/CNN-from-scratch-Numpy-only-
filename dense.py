@@ -64,11 +64,6 @@ class Dense_layer:
 
 
     def build(self, input_shape: tuple):
-        # Check if it has already been built
-
-        if self.built:
-            raise RuntimeError("Dense: Layer has already been built")
-        
         # input_shape = (features,)
 
         if len(input_shape) != 1:
@@ -87,8 +82,6 @@ class Dense_layer:
 
 
     def forward(self, input: np.ndarray) -> np.ndarray:
-        if not self.built:
-            raise RuntimeError("Dense layer must be built before forward")
         
         input = np.asarray(input, dtype=self.dtype)
 

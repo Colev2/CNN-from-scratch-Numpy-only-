@@ -10,9 +10,6 @@ class Flatten_layer:
 
 
     def build(self, input_shape):
-        if self.built:
-            raise RuntimeError("Flatten: Layer has already been built")
-
         if len(input_shape) != 3:
             raise ValueError("Flatten: Build expects input shape (H,W,C)")
 

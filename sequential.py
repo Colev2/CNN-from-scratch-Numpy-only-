@@ -27,7 +27,7 @@ class Sequential:
 
     def forward(self, x):
         if not self.built:
-            raise RuntimeError("Model must be built before forward")
+            raise RuntimeError("Sequential: Model must be built before forward")
         
         for layer in self.layers:
             x = layer.forward(x)
@@ -37,7 +37,7 @@ class Sequential:
 
     def backward(self, dout):
         if not self.built:
-            raise RuntimeError("Model must be built before backward")
+            raise RuntimeError("Sequential: Model must be built before backward")
         
         for layer in reversed(self.layers):
             dout = layer.backward(dout)
@@ -57,6 +57,9 @@ class Sequential:
 
 
     def get_weights(self):
+        if not self.built:
+            raise RuntimeError("Sequential: Model needs to be built")
+        
         weights = []
 
         for layer in self.layers:
