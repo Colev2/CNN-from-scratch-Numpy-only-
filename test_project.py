@@ -1,7 +1,7 @@
 import numpy as np
 
 from project import create_batches, train_test_split, create_optimizer_object
-from optimizers import SGD, SGD_momentum, Adam
+from cnn_numpy.optimizers import SGD, SGD_momentum, Adam
 from cnn_numpy.layers.batchnorm import BatchNorm
 
 

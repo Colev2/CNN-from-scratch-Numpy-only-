@@ -7,9 +7,9 @@ from cnn_numpy.layers.dense import Dense
 from cnn_numpy.layers.dropout import Dropout
 from cnn_numpy.losses.softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
 from cnn_numpy.layers.batchnorm import BatchNorm
-from optimizers import SGD, SGD_momentum, Adam
-from sequential import Sequential
-from early_stopping import EarlyStopping
+from cnn_numpy.optimizers import SGD, SGD_momentum, Adam
+from cnn_numpy.sequential import Sequential
+from cnn_numpy.early_stopping import EarlyStopping
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 from pathlib import Path
 
