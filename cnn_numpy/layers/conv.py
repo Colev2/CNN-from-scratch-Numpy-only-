@@ -9,7 +9,7 @@ filters: Integer, indicating the number of filters this layer has.
 filter_shape: Tuple, indicating the shape of the filters in the convolutional layer. For example: (3,3) means a 3x3 filter.
 input_img: Tuple, indicating the shape of the input image on the convolutional layer. For example, (256,256,3) means a 256x256x3 image.
 """
-class Conv_layer:
+class Conv2D:
     def __init__(self, filters=1, filter_shape=(3,3), padding=1, stride=1, rng=None, initialization="he", distribution="normal"):
         # filters kwarg
         if not isinstance(filters, int):
@@ -261,21 +261,3 @@ class Conv_layer:
 
 
 
-def main():
-    conv = Conv_layer(filters=8)
-
-    print(conv.weights)
-
-    out = conv.forward(np.random.randn(2,32,32,3))
-
-    print(conv.weights.shape)
-
-    old_weights = conv.weights
-
-    out = conv.forward(np.random.randn(2,32,32,3))
-
-    print(old_weights is conv.weights)
-
-
-if __name__ == "__main__":
-    main()

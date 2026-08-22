@@ -1,6 +1,6 @@
 import numpy as np
 
-class Dense_layer:
+class Dense:
     def __init__(self, neurons=1, rng=None, initialization="he", distribution="normal"):
         if neurons < 1:
             raise ValueError("Dense: Neurons must be 1 or more")

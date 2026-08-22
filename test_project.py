@@ -1,8 +1,8 @@
 import numpy as np
 
 from project import create_batches, train_test_split, create_optimizer_object
-from optimizer import SGD, SGD_momentum, Adam
-from batchnorm import BatchNorm
+from optimizers import SGD, SGD_momentum, Adam
+from cnn_numpy.layers.batchnorm import BatchNorm
 
 
 def test_create_batches():
@@ -31,10 +31,7 @@ def test_train_test_split():
     X = np.arange(20).reshape(10, 2)
 
     # 5 samples from class 0 and 5 from class 1
-    y = np.array([
-        0, 0, 0, 0, 0,
-        1, 1, 1, 1, 1
-    ])
+    y = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
 
     rng = np.random.default_rng(42)
 

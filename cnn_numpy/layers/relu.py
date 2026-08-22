@@ -1,6 +1,6 @@
 import numpy as np
 
-class ReLU_layer:
+class ReLU:
     def __init__(self):
         self.positive_input_mask = None
         self.built = False
@@ -76,13 +76,3 @@ class ReLU_layer:
         return []
 
 
-def main():
-    layer = ReLU_layer()
-    input = np.array([[-2, 3], [0, 5]])
-    layer.forward(input)
-    print(layer.positive_input_mask)
-
-
-
-if __name__ == "__main__":
-    main()

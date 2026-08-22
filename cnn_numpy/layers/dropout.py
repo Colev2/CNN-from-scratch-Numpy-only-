@@ -80,24 +80,3 @@ class Dropout:
 
 
 
-def main():
-    rng = np.random.default_rng(42)
-
-    drop = Dropout(drop_prob=0.2, rng=rng)
-
-    x = np.ones((100000,))
-
-    _ = drop.build(x.shape)
-
-    y = drop.forward(x)
-
-    print(np.mean(y))
-
-    dout = np.ones_like(x)
-
-    dx = drop.backward(dout)
-
-    print(np.mean(dx))
-
-if __name__ == "__main__":
-    main()

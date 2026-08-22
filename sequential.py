@@ -107,32 +107,3 @@ class Sequential:
         return l2_lambda * loss
 
 
-def main():
-    model = Sequential([
-    Conv_layer(filters=32),
-    ReLU_layer(),
-    Flatten_layer(),
-    Dense_layer(neurons=10)
-])
-
-    model.build((32,32,3))
-
-    x = np.random.randn(4,32,32,3)
-
-    out = model.forward(x)
-
-    print(out.shape)
-
-    dout = np.random.randn(4,10)
-
-    dx = model.backward(dout)
-
-    print(dx.shape)
-
-    params = model.parameters()
-
-    print(len(params))
-
-
-if __name__ == "__main__":
-    main()

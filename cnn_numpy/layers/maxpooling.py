@@ -1,7 +1,6 @@
 import numpy as np
-import time
 
-class MaxPooling2D_layer:
+class MaxPooling2D:
     def __init__(self, pool_size=(2,2), stride=2):
         if pool_size[0] < 1 or pool_size[1] < 1:
             raise ValueError("MaxPooling: Pooling window must contain at least 1 element")

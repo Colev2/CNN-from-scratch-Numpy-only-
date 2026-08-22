@@ -1,6 +1,6 @@
 import numpy as np
 
-class Flatten_layer:
+class Flatten:
     def __init__(self):
         self.input_shape = None
         self.output_shape = None

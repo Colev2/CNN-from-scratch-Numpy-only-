@@ -5,6 +5,9 @@ class SGD:
         if learning_rate <= 0:
             raise ValueError("SGD optimizer: Learning rate must be greater than 0")
 
+        if l2_lambda < 0:
+            raise ValueError("SGD optimizer: l2_lambda parameter must be 0 or greater")
+
         self.parameters_grads = parameters
         self.regularizable_ids = {id(p) for p in regularizable_parameters}
 
@@ -15,7 +18,7 @@ class SGD:
         for parameter, gradient in self.parameters_grads:
             if id(parameter) in self.regularizable_ids:
                 gradient = gradient + 2 * self.l2_lambda * parameter
-            parameter -= self.learning_rate * gradient
+            parameter[...] -= self.learning_rate * gradient
 
 
 class SGD_momentum:
@@ -25,6 +28,9 @@ class SGD_momentum:
 
         if not 0 <= momentum_coeff < 1:
             raise ValueError("SGD momentum optimizer: Momentum coefficient must be between 0 (inclusive) and 1 (exclusive)")
+
+        if l2_lambda < 0:
+            raise ValueError("SGD momentum optimizer: l2_lambda parameter must be 0 or greater")
 
         self.parameters_grads = parameters
         self.regularizable_ids = {id(p) for p in regularizable_parameters}
@@ -45,7 +51,7 @@ class SGD_momentum:
             u = self.momentum_coeff * self.state[id(parameter)] + gradient
             self.state[id(parameter)] = u
 
-            parameter -= self.learning_rate * u
+            parameter[...] -= self.learning_rate * u
             
 
 class Adam:
@@ -93,23 +99,6 @@ class Adam:
 
             m_corrected = m / (1 - self.b1 ** self.t)
             u_corrected = u / (1 - self.b2 ** self.t)
-
+            # In-place update
             parameter[...] -= self.learning_rate * m_corrected / (np.sqrt(u_corrected) + self.epsilon)
 
-def main():
-    parameter = [(np.array([1.0, 2.0]), np.array([0.5, -0.25]))]
-    optimizer = Adam(learning_rate=1.0, b1=0.9, b2=0.999, epsilon=0.01)
-    optimizer.update(parameter)
-    m = optimizer.state[id(parameter[0][0])]['m']
-    u = optimizer.state[id(parameter[0][0])]['u']
-    m_corrected = m / (1 - optimizer.b1 ** optimizer.t)
-    u_corrected = u / (1 - optimizer.b2 ** optimizer.t)
-    print(f"m: {m}")
-    print(f"u: {u}")
-    print(f"m_corrected: {m_corrected}")
-    print(f"u_corrected: {u_corrected}")
-    print(f"parameter: {parameter[0][0]}")
-
-
-if __name__ == "__main__":
-    main()

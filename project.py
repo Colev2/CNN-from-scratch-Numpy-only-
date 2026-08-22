@@ -1,13 +1,13 @@
 import numpy as np
-from conv import Conv_layer
-from relu import ReLU_layer
-from maxpooling import MaxPooling2D_layer
-from flatten import Flatten_layer
-from dense import Dense_layer
-from dropout import Dropout
-from softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
-from batchnorm import BatchNorm
-from optimizer import SGD, SGD_momentum, Adam
+from cnn_numpy.layers.conv import Conv2D
+from cnn_numpy.layers.relu import ReLU
+from cnn_numpy.layers.maxpooling import MaxPooling2D
+from cnn_numpy.layers.flatten import Flatten
+from cnn_numpy.layers.dense import Dense
+from cnn_numpy.layers.dropout import Dropout
+from cnn_numpy.losses.softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
+from cnn_numpy.layers.batchnorm import BatchNorm
+from optimizers import SGD, SGD_momentum, Adam
 from sequential import Sequential
 from early_stopping import EarlyStopping
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
@@ -22,7 +22,7 @@ def main():
     distribution = get_distribution()
     learning_rate = get_learning_rate()
     optimizer_class = get_optimizer_class()
-    weight_decay = get_weight_decay()
+    weight_decay = get_l2_lambda()
 
     rng = np.random.default_rng(42)
 
@@ -46,35 +46,35 @@ def main():
     X_test /= std
 
     model = Sequential([
-        Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
         BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU_layer(),
+        ReLU(),
 
-        Conv_layer(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
         BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU_layer(),
+        ReLU(),
 
-        MaxPooling2D_layer(pool_size=(2,2), stride=2),
+        MaxPooling2D(pool_size=(2,2), stride=2),
 
-        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
         BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU_layer(),
+        ReLU(),
 
-        Conv_layer(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
         BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU_layer(),
+        ReLU(),
 
-        MaxPooling2D_layer(pool_size=(2,2), stride=2),
+        MaxPooling2D(pool_size=(2,2), stride=2),
 
-        Flatten_layer(),
+        Flatten(),
 
-        Dense_layer(neurons=256, rng=rng, initialization="he", distribution="normal"),
+        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
         BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU_layer(),
+        ReLU(),
 
         Dropout(drop_prob=0.4, rng=rng),
 
-        Dense_layer(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
+        Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
             ])
 
     model.build(X_train.shape[1:])
@@ -249,15 +249,15 @@ def create_optimizer_object(optimizer_class, parameters, regularizable_parameter
     return optimizer
 
 
-def get_weight_decay():
+def get_l2_lambda():
     try:
-        weight_decay = float(input("Give weight decay: "))
-        if weight_decay < 0 :
+        l2_lambda = float(input("Give L2 regularization's lambda: "))
+        if l2_lambda < 0 :
             raise ValueError
     except ValueError:
-        raise ValueError("Weight decay must be a non-negative float")
+        raise ValueError("Lambda must be a non-negative float")
 
-    return weight_decay
+    return l2_lambda
 
 
 def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
