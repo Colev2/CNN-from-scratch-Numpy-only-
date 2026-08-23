@@ -1,0 +1,2790 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+\usepackage{caption}
+\usepackage{float}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue,
+    pdftitle={CNN from Scratch with NumPy -- Mathematical and Implementation Notes},
+    pdfauthor={CNN from Scratch Project}
+}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    showstringspaces=false,
+    columns=fullflexible,
+    keepspaces=true,
+    frame=single,
+    framerule=0.3pt,
+    tabsize=4,
+    captionpos=b
+}
+\lstset{style=pythonstyle}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{CNN from Scratch with NumPy}
+\rhead{Technical Notes}
+\cfoot{\thepage}
+\setlength{\headheight}{14pt}
+\allowdisplaybreaks
+
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\shape}[1]{\texttt{#1}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\had}{\odot}
+
+\title{\textbf{CNN from Scratch with NumPy}\\[0.4em]
+\large Mathematical Derivations, Backpropagation, and the Path from Explicit Loops to Vectorized NumPy}
+\author{Technical companion notes for the project}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+These notes document the reasoning behind a small convolutional-neural-network framework implemented from scratch with NumPy. The goal is not merely to list formulas. The goal is to make each operation understandable at three levels: first as a component-wise mathematical definition, then as an explicit loop-based implementation that mirrors the mathematics, and finally as the vectorized NumPy form used by the framework.
+
+The emphasis is on backward propagation, especially for Dense, Conv2D, MaxPooling2D, and Batch Normalization. In each case, the central question is the same: \emph{which quantities influence the loss, through which computational paths, and why do some gradient contributions have to be summed?} The document also covers ReLU, Flatten, Dropout, Softmax with Cross-Entropy, Sequential model composition, optimizer state, AdamW, train/evaluation modes, Early Stopping, checkpoint state, dtype choices, and numerical gradient checking.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{Purpose and Scope}
+
+This document is deliberately more detailed than a repository README. A README should let a reader understand the project quickly: what it is, how to run it, what was implemented, and what results it achieves. These notes serve a different purpose. They are the long-form derivation and implementation record behind the framework.
+
+The framework uses NumPy only for neural-network computation. Tensors use NHWC layout:
+\[
+X \in \R^{B\times H\times W\times C},
+\]
+where $B$ is batch size, $H$ is height, $W$ is width, and $C$ is the feature/channel dimension.
+
+The current model family is composed from layers such as
+\begin{center}
+Conv2D $\rightarrow$ BatchNorm $\rightarrow$ ReLU $\rightarrow$ Conv2D $\rightarrow$ BatchNorm $\rightarrow$ ReLU $\rightarrow$ MaxPool
+\end{center}
+followed by additional convolutional blocks, Flatten, Dense, BatchNorm, ReLU, Dropout, and a final Dense layer that outputs logits.
+
+Code fragments in these notes follow the implementation design and naming used in the project. Some snippets are intentionally reduced to the part relevant to the derivation, so that control-flow details do not hide the mathematics.
+
+\section{The Core Backpropagation Mental Model}
+
+\subsection{Local derivatives and the chain rule}
+
+Backpropagation is easiest to reason about when a complicated forward computation is split into small operations. If
+\[
+a \longrightarrow b \longrightarrow c \longrightarrow L,
+\]
+then
+\[
+\pd{L}{a}=\pd{L}{c}\pd{c}{b}\pd{b}{a}.
+\]
+In code, the incoming gradient to a layer is often called \code{dout}. If the layer output is $z$, then
+\[
+\code{dout}=\pd{L}{z}.
+\]
+The backward method combines this upstream gradient with the layer's local derivatives to compute gradients with respect to its input and parameters.
+
+\subsection{Why gradient contributions are added}
+
+A crucial idea throughout the framework is that one variable may affect the loss through multiple computational paths. If $x$ influences both $u$ and $v$, and both influence $L$, then
+\[
+\pd{L}{x}
+=
+\pd{L}{u}\pd{u}{x}
++
+\pd{L}{v}\pd{v}{x}.
+\]
+The addition is not an implementation trick. It is the multivariable chain rule.
+
+This appears repeatedly:
+\begin{itemize}[leftmargin=2em]
+    \item A Dense weight is shared by every sample in the batch, so its gradient sums contributions across samples.
+    \item A convolution weight is reused at every spatial window, so its gradient sums contributions across all batch/spatial positions.
+    \item One input pixel can appear in several overlapping convolution windows, so $\partial L/\partial x$ sums contributions from all windows that contain that pixel.
+    \item One BatchNorm input influences its normalized value directly and also influences the batch mean and variance used by all normalized values in the same feature.
+    \item When MaxPooling windows overlap, one input may receive gradients from more than one pooled output, so scatter operations must accumulate with \code{+=}.
+\end{itemize}
+
+\subsection{Three levels of understanding}
+
+For the difficult layers, the notes follow the same progression:
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{Component-wise mathematics.} Write one scalar output and differentiate one scalar input or parameter.
+    \item \textbf{Loop-based code.} Translate the scalar equations into explicit loops. This is usually slow, but it exposes every index and every sum.
+    \item \textbf{Vectorized NumPy.} Identify which loops are reductions, matrix multiplications, broadcasting operations, reshapes, or scatter-adds, and replace Python loops where practical.
+\end{enumerate}
+
+The vectorized implementation should always be explainable as a compact form of the explicit loop-based implementation.
+
+\section{Notation and Shape Conventions}
+
+For convolutional tensors:
+\begin{align*}
+X &: (B,H,W,C_{in}),\\
+W &: (F,K_h,K_w,C_{in}),\\
+b &: (F,),\\
+Z &: (B,H_{out},W_{out},F).
+\end{align*}
+
+For a Dense layer:
+\begin{align*}
+X &: (B,N),\\
+W &: (M,N),\\
+b &: (M,),\\
+Z &: (B,M).
+\end{align*}
+
+The upstream gradient has the same shape as the corresponding layer output. Thus if a Conv2D layer produces $Z\in\R^{B\times H_{out}\times W_{out}\times F}$, its backward method receives
+\[
+D_Z=\pd{L}{Z}\in\R^{B\times H_{out}\times W_{out}\times F}.
+\]
+
+Throughout the notes, $s$ denotes stride and $p$ denotes symmetric zero-padding unless stated otherwise.
+
+\newpage
+\section{Dense Layer}
+
+\subsection{Forward pass: component-wise definition}
+
+For one sample $x\in\R^N$, one Dense neuron $i$ computes
+\[
+z_i=\sum_{j=0}^{N-1}w_{ij}x_j+b_i.
+\]
+For $M$ neurons:
+\[
+z=Wx+b,
+\]
+with $W\in\R^{M\times N}$.
+
+For a batch $X\in\R^{B\times N}$, sample $s$ is independent of every other sample:
+\[
+z_{s,i}=\sum_j w_{ij}x_{s,j}+b_i.
+\]
+With the project weight layout $(M,N)$, the vectorized batch form is
+\[
+Z=XW^T+b,
+\]
+where NumPy broadcasts $b$ over the batch dimension.
+
+\subsection{Forward pass: explicit loops}
+
+\begin{lstlisting}
+output = np.zeros((B, M), dtype=self.dtype)
+
+for s in range(B):
+    for i in range(M):
+        z = self.bias[i]
+        for j in range(N):
+            z += input[s, j] * self.weights[i, j]
+        output[s, i] = z
+\end{lstlisting}
+
+The inner loop over $j$ is a dot product. Replacing all such dot products at once gives the vectorized expression:
+
+\begin{lstlisting}
+output = input @ self.weights.T + self.bias
+\end{lstlisting}
+
+\subsection{Backward pass: gradient with respect to the input}
+
+Let
+\[
+dout_{s,i}=\pd{L}{z_{s,i}}.
+\]
+For one input feature $x_{s,j}$,
+\[
+\pd{L}{x_{s,j}}
+=
+\sum_i
+\pd{L}{z_{s,i}}
+\pd{z_{s,i}}{x_{s,j}}.
+\]
+Because
+\[
+\pd{z_{s,i}}{x_{s,j}}=w_{ij},
+\]
+we obtain
+\[
+\boxed{
+\pd{L}{x_{s,j}}=\sum_i dout_{s,i}w_{ij}
+}.
+\]
+The sum over $i$ appears because the same input feature feeds every neuron in the Dense layer.
+
+The explicit loops are:
+\begin{lstlisting}
+din = np.zeros_like(input)
+
+for s in range(B):
+    for j in range(N):
+        for i in range(M):
+            din[s, j] += dout[s, i] * self.weights[i, j]
+\end{lstlisting}
+
+The inner sum is exactly matrix multiplication:
+\begin{lstlisting}
+din = dout @ self.weights
+# (B, M) @ (M, N) -> (B, N)
+\end{lstlisting}
+
+\subsection{Backward pass: gradient with respect to the bias}
+
+The same bias $b_i$ is reused for every sample:
+\[
+z_{s,i}=\cdots+b_i.
+\]
+Therefore
+\[
+\pd{L}{b_i}
+=
+\sum_s
+\pd{L}{z_{s,i}}
+\pd{z_{s,i}}{b_i}
+=
+\sum_s dout_{s,i}.
+\]
+Thus
+\[
+\boxed{db_i=\sum_s dout_{s,i}}.
+\]
+
+Loop form:
+\begin{lstlisting}
+dbias = np.zeros_like(self.bias)
+for s in range(B):
+    for i in range(M):
+        dbias[i] += dout[s, i]
+\end{lstlisting}
+
+Vectorized form:
+\begin{lstlisting}
+self.dbias[...] = np.sum(dout, axis=0)
+\end{lstlisting}
+
+\subsection{Backward pass: gradient with respect to the weights}
+
+For one weight $w_{ij}$ and one sample $s$,
+\[
+\left(\pd{L}{w_{ij}}\right)_s
+=
+\pd{L}{z_{s,i}}
+\pd{z_{s,i}}{w_{ij}}
+=
+dout_{s,i}x_{s,j}.
+\]
+Because the same weight is shared by all samples, all paths contribute:
+\[
+\boxed{
+\pd{L}{w_{ij}}=\sum_s dout_{s,i}x_{s,j}
+}.
+\]
+
+Explicit loops:
+\begin{lstlisting}
+dweights = np.zeros_like(self.weights)
+
+for i in range(M):
+    for j in range(N):
+        for s in range(B):
+            dweights[i, j] += dout[s, i] * input[s, j]
+\end{lstlisting}
+
+For one sample, $dW_s$ is an outer product. For the entire batch, all outer products are summed by one matrix multiplication:
+\[
+\boxed{dW=dout^T X}.
+\]
+
+\begin{lstlisting}
+self.dweights[...] = dout.T @ self.input
+# (M, B) @ (B, N) -> (M, N)
+\end{lstlisting}
+
+The matrix multiplication should not be memorized in isolation. Its element $(i,j)$ is
+\[
+(dout^T X)_{ij}=\sum_s dout_{s,i}x_{s,j},
+\]
+which is exactly the component-wise derivative above.
+
+\subsection{Dense backward summary}
+
+\[
+\boxed{
+\begin{aligned}
+dX &= dout\,W,\\
+dW &= dout^T X,\\
+db &= \sum_{s=0}^{B-1} dout_s.
+\end{aligned}}
+\]
+
+The shape logic is as important as the formulas:
+\begin{itemize}
+    \item $dX$ keeps the batch dimension because every sample owns a distinct input.
+    \item $dW$ has no batch dimension because there is one shared weight matrix.
+    \item $db$ has no batch dimension because there is one shared bias vector.
+\end{itemize}
+
+\section{ReLU}
+
+\subsection{Forward}
+
+ReLU is defined component-wise as
+\[
+y_i=\max(0,x_i).
+\]
+The vectorized forward pass is simply
+\begin{lstlisting}
+output = np.maximum(0, input)
+\end{lstlisting}
+
+\subsection{Backward}
+
+For $x_i\neq 0$,
+\[
+\pd{y_i}{x_i}=
+\begin{cases}
+1,&x_i>0,\\
+0,&x_i<0.
+\end{cases}
+\]
+Therefore
+\[
+\boxed{\pd{L}{x_i}=\pd{L}{y_i}\,\mathbf{1}[x_i>0]}.
+\]
+
+Explicit loops:
+\begin{lstlisting}
+din = np.empty_like(dout)
+for idx in np.ndindex(input.shape):
+    if input[idx] > 0:
+        din[idx] = dout[idx]
+    else:
+        din[idx] = 0
+\end{lstlisting}
+
+Vectorized:
+\begin{lstlisting}
+din = dout * (self.input > 0)
+\end{lstlisting}
+
+At $x=0$ ReLU is not differentiable in the classical sense. A practical implementation chooses a convention, commonly gradient zero.
+
+\section{Flatten}
+
+Flatten changes shape but does not change numerical values. If a convolutional activation has shape
+\[
+(B,H,W,C),
+\]
+its forward pass may produce
+\[
+(B,HWC).
+\]
+
+\begin{lstlisting}
+self.input_shape = input.shape
+output = input.reshape(input.shape[0], -1)
+\end{lstlisting}
+
+The derivative of a pure reshape is the identity mapping with different indexing. Therefore backward only restores the saved shape:
+\begin{lstlisting}
+din = dout.reshape(self.input_shape)
+\end{lstlisting}
+
+No gradient values are created, multiplied, or summed. Only their interpretation as tensor coordinates changes.
+
+\newpage
+\section{Conv2D}
+
+\subsection{Forward geometry}
+
+The Conv2D layer receives
+\[
+X\in\R^{B\times H\times W\times C_{in}}
+\]
+and contains $F$ filters
+\[
+W\in\R^{F\times K_h\times K_w\times C_{in}}.
+\]
+After symmetric padding $p$, the padded spatial dimensions are
+\[
+H_p=H+2p,\qquad W_p=W+2p.
+\]
+For stride $s$, assuming valid integer output sizes,
+\[
+H_{out}=\left\lfloor\frac{H_p-K_h}{s}\right\rfloor+1,
+\qquad
+W_{out}=\left\lfloor\frac{W_p-K_w}{s}\right\rfloor+1.
+\]
+
+The output has shape
+\[
+Z\in\R^{B\times H_{out}\times W_{out}\times F}.
+\]
+
+\subsection{Forward pass: component-wise equation}
+
+For output position $(b,h,w,f)$, the top-left input coordinate of the corresponding receptive field is
+\[
+r=h s,\qquad q=w s
+\]
+in padded-input coordinates. The scalar output is
+\[
+\boxed{
+z_{b,h,w,f}
+=
+\sum_{k_r=0}^{K_h-1}
+\sum_{k_c=0}^{K_w-1}
+\sum_{c=0}^{C_{in}-1}
+X^{(p)}_{b,hs+k_r,ws+k_c,c}
+W_{f,k_r,k_c,c}
++b_f
+}.
+\]
+
+This equation is the reference point for every forward and backward derivation that follows.
+
+\subsection{Forward pass: fully explicit loops}
+
+A direct implementation follows the equation literally:
+\begin{lstlisting}
+output = np.zeros((B, Hout, Wout, F), dtype=self.dtype)
+
+for b in range(B):
+    for h in range(Hout):
+        for w in range(Wout):
+            for f in range(F):
+                z = self.bias[f]
+
+                for kr in range(Kh):
+                    for kc in range(Kw):
+                        for c in range(Cin):
+                            input_row = h * stride + kr
+                            input_col = w * stride + kc
+
+                            z += (
+                                padded_input[b, input_row, input_col, c]
+                                * self.weights[f, kr, kc, c]
+                            )
+
+                output[b, h, w, f] = z
+\end{lstlisting}
+
+This version is valuable because every loop corresponds to one index in the mathematical definition. It is also slow in Python because the innermost scalar operations are executed millions of times.
+
+\subsection{From windows to matrix multiplication}
+
+For each $(b,h,w)$, define a local input window
+\[
+\mathcal{X}_{b,h,w}\in\R^{K_h\times K_w\times C_{in}}
+\]
+whose elements are
+\[
+\mathcal{X}_{b,h,w,k_r,k_c,c}
+=
+X^{(p)}_{b,hs+k_r,ws+k_c,c}.
+\]
+Then the forward scalar becomes
+\[
+z_{b,h,w,f}
+=
+\sum_{k_r,k_c,c}
+\mathcal{X}_{b,h,w,k_r,k_c,c}
+W_{f,k_r,k_c,c}+b_f.
+\]
+
+Now flatten the kernel-relative dimensions $(k_r,k_c,c)$ into one index $q$ of length
+\[
+Q=K_hK_wC_{in}.
+\]
+Also flatten $(b,h,w)$ into one window index $p$ of length
+\[
+P=BH_{out}W_{out}.
+\]
+This produces
+\[
+X_{windows}\in\R^{P\times Q},
+\qquad
+W_{flat}\in\R^{F\times Q}.
+\]
+Each row of $X_{windows}$ is one flattened convolution window. Each row of $W_{flat}$ is one flattened filter.
+
+The complete forward pass can therefore be written as
+\[
+Z_{flat}=X_{windows}W_{flat}^T+b,
+\]
+with shapes
+\[
+(P,Q)(Q,F)\rightarrow(P,F).
+\]
+Finally, reshape $(P,F)$ back to $(B,H_{out},W_{out},F)$.
+
+\subsection{Vectorized window extraction}
+
+The implementation uses \code{np.lib.stride\_tricks.sliding\_window\_view} to obtain all stride-1 windows as a view over the padded input, then samples the spatial window grid according to the convolution stride.
+
+A representative form is:
+\begin{lstlisting}
+windows = np.lib.stride_tricks.sliding_window_view(
+    self.padded_input,
+    axis=(1, 2),
+    window_shape=(Kh, Kw),
+)
+# (B, Hp-Kh+1, Wp-Kw+1, C, Kh, Kw)
+
+windows = windows[:, ::self.stride, ::self.stride, :]
+# (B, Hout, Wout, C, Kh, Kw)
+
+windows = windows.transpose(0, 1, 2, 4, 5, 3)
+# (B, Hout, Wout, Kh, Kw, C)
+
+flat_windows = windows.reshape(
+    B * Hout * Wout,
+    Kh * Kw * Cin,
+)
+# (B*Hout*Wout, Kh*Kw*Cin)
+
+flat_weights = self.weights.reshape(F, -1)
+# (F, Kh*Kw*Cin)
+
+flat_output = flat_windows @ flat_weights.T + self.bias
+output = flat_output.reshape(B, Hout, Wout, F)
+\end{lstlisting}
+
+The matrix multiplication is not changing the mathematics. It is computing all dot products between all windows and all filters at once.
+
+\subsection{Conv2D backward overview}
+
+The backward method receives
+\[
+dout_{b,h,w,f}=\pd{L}{z_{b,h,w,f}}.
+\]
+It must compute three objects:
+\[
+\pd{L}{b_f},
+\qquad
+\pd{L}{W_{f,k_r,k_c,c}},
+\qquad
+\pd{L}{X_{b,i,j,c}}.
+\]
+
+The three gradients have different accumulation patterns:
+\begin{itemize}
+    \item $db_f$ sums over every output generated by filter $f$.
+    \item $dW_{f,k_r,k_c,c}$ sums over every batch/spatial window in which the shared weight was used.
+    \item $dX_{b,i,j,c}$ sums over every filter and every overlapping window through which the input element affected the loss.
+\end{itemize}
+
+\subsection{Bias gradient}
+
+From
+\[
+z_{b,h,w,f}=\cdots+b_f,
+\]
+we have
+\[
+\pd{z_{b,h,w,f}}{b_f}=1.
+\]
+The same $b_f$ affects every batch/spatial output for filter $f$, so
+\[
+\boxed{
+\pd{L}{b_f}
+=
+\sum_b\sum_h\sum_w dout_{b,h,w,f}
+}.
+\]
+
+Loop form:
+\begin{lstlisting}
+for f in range(F):
+    dbias[f] = 0
+    for b in range(B):
+        for h in range(Hout):
+            for w in range(Wout):
+                dbias[f] += dout[b, h, w, f]
+\end{lstlisting}
+
+Vectorized:
+\begin{lstlisting}
+self.dbias[...] = np.sum(dout, axis=(0, 1, 2))
+# (F,)
+\end{lstlisting}
+
+\subsection{Weight gradient: component-wise derivation}
+
+Consider one specific weight
+\[
+W_{f,k_r,k_c,c}.
+\]
+Because convolution reuses the same filter at every spatial position and for every sample, this single weight affects all outputs
+\[
+z_{b,h,w,f}
+\]
+for the same filter $f$.
+
+For one such output,
+\[
+\pd{z_{b,h,w,f}}{W_{f,k_r,k_c,c}}
+=
+X^{(p)}_{b,hs+k_r,ws+k_c,c}.
+\]
+Therefore the multivariable chain rule gives
+\[
+\boxed{
+\pd{L}{W_{f,k_r,k_c,c}}
+=
+\sum_b\sum_h\sum_w
+\pd{L}{z_{b,h,w,f}}
+X^{(p)}_{b,hs+k_r,ws+k_c,c}
+}.
+\]
+Using \code{dout},
+\[
+\boxed{
+dW_{f,k_r,k_c,c}
+=
+\sum_{b,h,w}
+dout_{b,h,w,f}
+\mathcal{X}_{b,h,w,k_r,k_c,c}
+}.
+\]
+
+The sum exists because the same parameter participates in many computational paths. Each use of the weight contributes one term to its final gradient.
+
+\subsection{Weight gradient: explicit loops}
+
+\begin{lstlisting}
+dweights = np.zeros_like(self.weights)
+
+for f in range(F):
+    for kr in range(Kh):
+        for kc in range(Kw):
+            for c in range(Cin):
+                for b in range(B):
+                    for h in range(Hout):
+                        for w in range(Wout):
+                            input_row = h * stride + kr
+                            input_col = w * stride + kc
+
+                            dweights[f, kr, kc, c] += (
+                                dout[b, h, w, f]
+                                * padded_input[b, input_row, input_col, c]
+                            )
+\end{lstlisting}
+
+This is a direct translation of the derivative. The expensive part is the reduction over all $(b,h,w)$ for every weight.
+
+\subsection{Weight gradient: vectorization as one matrix multiplication}
+
+Flatten
+\[
+dout\rightarrow D\in\R^{P\times F},
+\qquad
+P=BH_{out}W_{out}.
+\]
+The implementation uses
+\begin{lstlisting}
+flat_dout = np.reshape(
+    dout,
+    shape=(batch_size * Hout * Wout, -1),
+)
+# (B*Hout*Wout, F)
+\end{lstlisting}
+
+Recall
+\[
+X_{windows}\in\R^{P\times Q},
+\qquad
+Q=K_hK_wC_{in}.
+\]
+Then
+\[
+D^TX_{windows}\in\R^{F\times Q}.
+\]
+Look at one element $(f,q)$:
+\[
+(D^TX_{windows})_{f,q}
+=
+\sum_{p=0}^{P-1}D_{p,f}X_{windows,p,q}.
+\]
+The flattened index $p$ is exactly one $(b,h,w)$ position, while $q$ is exactly one $(k_r,k_c,c)$ position. Therefore
+\[
+(D^TX_{windows})_{f,q}
+=
+\sum_{b,h,w}
+dout_{b,h,w,f}
+\mathcal{X}_{b,h,w,k_r,k_c,c},
+\]
+which is the component-wise gradient derived above.
+
+Hence:
+\begin{lstlisting}
+dL_dw_flat = flat_dout.T @ flat_windows
+# (F, B*Hout*Wout) @ (B*Hout*Wout, Kh*Kw*C)
+# -> (F, Kh*Kw*C)
+
+self.dweights[...] = np.reshape(
+    dL_dw_flat,
+    shape=(-1, Kh, Kw, self.in_channels),
+)
+# (F, Kh, Kw, C)
+\end{lstlisting}
+
+A useful interpretation is:
+\begin{quote}
+Row $f$ of \code{flat\_dout.T} contains all upstream gradients associated with filter $f$. Column $q$ of \code{flat\_windows} contains the same kernel-relative input position $q=(k_r,k_c,c)$ from every convolution window. Their dot product sums exactly the gradient contributions to weight $(f,k_r,k_c,c)$ from every place where that weight was used.
+\end{quote}
+
+\subsection{Input gradient: the first source of accumulation --- filters}
+
+The input gradient is more subtle because an input element can influence many outputs.
+
+Start with one occurrence of one input element inside one specific window. Let
+\[
+\mathcal{X}_{b,h,w,k_r,k_c,c}
+\]
+be the element at local kernel position $(k_r,k_c,c)$ inside window $(b,h,w)$.
+
+Within this fixed window, that element contributes to the output of every filter:
+\[
+z_{b,h,w,f}
+=
+\sum_{k_r,k_c,c}
+\mathcal{X}_{b,h,w,k_r,k_c,c}W_{f,k_r,k_c,c}+b_f.
+\]
+For one filter,
+\[
+\pd{z_{b,h,w,f}}{\mathcal{X}_{b,h,w,k_r,k_c,c}}
+=W_{f,k_r,k_c,c}.
+\]
+Since the same window element affects all $F$ filters, its gradient is
+\[
+\boxed{
+\pd{L}{\mathcal{X}_{b,h,w,k_r,k_c,c}}
+=
+\sum_f
+dout_{b,h,w,f}
+W_{f,k_r,k_c,c}
+}.
+\]
+
+This is the first accumulation in $dX$: \textbf{sum over filters}.
+
+\subsection{Input gradient: explicit loop for one window occurrence}
+
+If we temporarily treat every occurrence inside every window as a separate variable, we could compute
+\begin{lstlisting}
+dwindows = np.zeros((B, Hout, Wout, Kh, Kw, Cin), dtype=self.dtype)
+
+for b in range(B):
+    for h in range(Hout):
+        for w in range(Wout):
+            for kr in range(Kh):
+                for kc in range(Kw):
+                    for c in range(Cin):
+                        for f in range(F):
+                            dwindows[b, h, w, kr, kc, c] += (
+                                dout[b, h, w, f]
+                                * self.weights[f, kr, kc, c]
+                            )
+\end{lstlisting}
+
+At this stage, \code{dwindows} is \emph{not yet} $dL/dX$. It contains gradients per \emph{window occurrence}. If one original input pixel appears in several overlapping windows, it appears several times in \code{dwindows}.
+
+\subsection{Vectorizing the sum over filters}
+
+Flatten the filter weights:
+\begin{lstlisting}
+flat_weights = np.reshape(
+    self.weights,
+    shape=(self.filters, -1),
+)
+# (F, Kh*Kw*C)
+\end{lstlisting}
+
+Then
+\begin{lstlisting}
+dwindows_flat = flat_dout @ flat_weights
+# (B*Hout*Wout, F) @ (F, Kh*Kw*C)
+# -> (B*Hout*Wout, Kh*Kw*C)
+\end{lstlisting}
+
+For one output element $(p,q)$ of this multiplication,
+\[
+(dwindows_{flat})_{p,q}
+=
+\sum_f flat\_dout_{p,f}\,flat\_weights_{f,q}.
+\]
+After mapping $p\leftrightarrow(b,h,w)$ and $q\leftrightarrow(k_r,k_c,c)$, this is exactly
+\[
+\sum_f dout_{b,h,w,f}W_{f,k_r,k_c,c}.
+\]
+
+Reshaping restores the meaningful window coordinates:
+\begin{lstlisting}
+dwindows = np.reshape(
+    dwindows_flat,
+    shape=(batch_size, Hout, Wout, Kh, Kw, self.in_channels),
+)
+# (B, Hout, Wout, Kh, Kw, C)
+\end{lstlisting}
+
+The useful mental model is:
+\begin{quote}
+\code{dwindows} contains gradients per window occurrence. Its indices still describe \emph{which convolution window} and \emph{which local position inside that window}, not yet the unique coordinates of the original input tensor.
+\end{quote}
+
+\subsection{Input gradient: the second source of accumulation --- overlapping windows}
+
+The relationship between a window element and the padded input is
+\[
+\boxed{
+\mathcal{X}_{b,h,w,k_r,k_c,c}
+=
+X^{(p)}_{b,hs+k_r,ws+k_c,c}
+}.
+\]
+Different tuples $(h,w,k_r,k_c)$ can refer to the same padded-input position.
+
+For example with stride $s=1$:
+\[
+(h=0,w=0,k_r=0,k_c=1)
+\]
+and
+\[
+(h=0,w=1,k_r=0,k_c=0)
+\]
+both refer to padded-input column $1$ because
+\[
+0\cdot1+1=1,
+\qquad
+1\cdot1+0=1.
+\]
+Therefore the corresponding entries in \code{dwindows} are two different computational-path contributions to the same original input element and must be added.
+
+This is the second accumulation in $dX$: \textbf{sum over overlapping window occurrences}.
+
+\subsection{Input gradient: the completely explicit scatter-add}
+
+The most transparent implementation is:
+\begin{lstlisting}
+dL_dx_padded = np.zeros_like(self.padded_input)
+
+for b in range(B):
+    for h in range(Hout):
+        for w in range(Wout):
+            for kr in range(Kh):
+                for kc in range(Kw):
+                    for c in range(Cin):
+                        input_row = h * stride + kr
+                        input_col = w * stride + kc
+
+                        dL_dx_padded[b, input_row, input_col, c] += (
+                            dwindows[b, h, w, kr, kc, c]
+                        )
+\end{lstlisting}
+
+The \code{+=} is essential. Assignment with \code{=} would overwrite earlier paths whenever windows overlap.
+
+\subsection{Vectorizing the scatter over output positions}
+
+The implementation keeps only the two loops over kernel position:
+\begin{lstlisting}
+for kr in range(Kh):
+    for kc in range(Kw):
+        dL_dx_padded[
+            :,
+            kr:kr + Hout * self.stride:self.stride,
+            kc:kc + Wout * self.stride:self.stride,
+            :,
+        ] += dwindows[:, :, :, kr, kc, :]
+\end{lstlisting}
+
+This line becomes much easier to understand by expanding it back into the loops it replaces:
+\begin{lstlisting}
+for kr in range(Kh):
+    for kc in range(Kw):
+        for h in range(Hout):
+            for w in range(Wout):
+                dL_dx_padded[
+                    :,
+                    h * stride + kr,
+                    w * stride + kc,
+                    :,
+                ] += dwindows[:, h, w, kr, kc, :]
+\end{lstlisting}
+
+For a fixed $(k_r,k_c)$,
+\begin{lstlisting}
+dwindows[:, :, :, kr, kc, :]
+\end{lstlisting}
+has shape $(B,H_{out},W_{out},C_{in})$. It contains the gradient of the local $(k_r,k_c)$ window position for every convolution window and every channel.
+
+The left-hand slice
+\begin{lstlisting}
+dL_dx_padded[
+    :,
+    kr:kr + Hout * stride:stride,
+    kc:kc + Wout * stride:stride,
+    :,
+]
+\end{lstlisting}
+also has shape $(B,H_{out},W_{out},C_{in})$. Its internal index $(h,w)$ refers to padded-input coordinate
+\[
+(hs+k_r,\;ws+k_c).
+\]
+Thus the slice performs the mapping from \textbf{window coordinates} to \textbf{input-pixel coordinates} for all output positions at once.
+
+The step in the slice is the stride because, as $h$ increases by one, the start of the next convolution window moves by $s$ input rows. The selected row indices are
+\[
+k_r,\;k_r+s,\;k_r+2s,\ldots,
+\]
+which are exactly $hs+k_r$. The same reasoning applies to columns.
+
+\subsection{A compact mental model for Conv2D $dX$}
+
+The complete input-gradient computation can be understood in two stages:
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{Per window occurrence:} \code{flat\_dout @ flat\_weights} sums over filters and computes the gradient of every element of every extracted window.
+    \item \textbf{Back to the real input:} scatter-add maps each window occurrence back to the padded-input coordinate from which it came and adds contributions whenever multiple occurrences correspond to the same original input element.
+\end{enumerate}
+
+In one line:
+\begin{center}
+\code{dwindows = gradients per window occurrence}\\
+$\Downarrow$ scatter-add\\
+\code{dL/dx = gradients per actual input element}
+\end{center}
+
+A general component-wise expression for one padded-input element is
+\[
+\boxed{
+\pd{L}{X^{(p)}_{b,i,j,c}}
+=
+\sum_{\substack{h,w,k_r,k_c\\i=hs+k_r\\j=ws+k_c}}
+\sum_f
+ dout_{b,h,w,f}W_{f,k_r,k_c,c}
+}.
+\]
+The conditions underneath the outer sum mean: include every window/kernel-position pair that maps to the input coordinate $(i,j)$.
+
+\subsection{Removing padding}
+
+The scatter is performed into the padded-input gradient because the forward windows were extracted from the padded input. The final layer input gradient is obtained by cropping back to the original input region.
+
+Conceptually, if the original spatial shape is $(H,W)$, the safest statement is
+\begin{lstlisting}
+din = dL_dx_padded[:, p:p + H, p:p + W, :]
+\end{lstlisting}
+which also handles $p=0$ naturally.
+
+\subsection{Conv2D backward summary}
+
+The backward pass contains three different reductions:
+\begin{align*}
+db_f
+&=
+\sum_{b,h,w}dout_{b,h,w,f},\\
+
+dW_{f,k_r,k_c,c}
+&=
+\sum_{b,h,w}
+dout_{b,h,w,f}
+X^{(p)}_{b,hs+k_r,ws+k_c,c},\\
+
+dX^{(p)}_{b,i,j,c}
+&=
+\sum_{\text{windows containing }(i,j,c)}
+\sum_f dout\cdot W.
+\end{align*}
+
+The vectorized implementation mirrors these sums:
+\begin{itemize}
+    \item \code{np.sum(..., axis=(0,1,2))} for $db$,
+    \item \code{flat\_dout.T @ flat\_windows} for $dW$,
+    \item \code{flat\_dout @ flat\_weights} followed by scatter-add for $dX$.
+\end{itemize}
+
+\newpage
+\section{MaxPooling2D}
+
+\subsection{Forward pass: what MaxPooling computes}
+
+For a pooling window of size $(K_h,K_w)$, MaxPooling acts independently for each sample and channel. At output location $(h,w)$ and channel $c$,
+\[
+y_{b,h,w,c}
+=
+\max_{0\le k_r<K_h\atop 0\le k_c<K_w}
+X_{b,hs+k_r,ws+k_c,c}.
+\]
+
+Unlike convolution, MaxPooling has no trainable parameters. Its backward pass is nevertheless nontrivial because only the input element that won the maximum operation receives the upstream gradient.
+
+\subsection{Forward pass: explicit windows}
+
+For one output spatial location, the loop-based forward pass may extract
+\begin{lstlisting}
+window = input[
+    :,
+    input_row:input_row + Kh,
+    input_col:input_col + Kw,
+    :,
+]
+# (B, Kh, Kw, C)
+\end{lstlisting}
+
+For fixed $(b,c)$, \code{window[b, :, :, c]} is a $K_h\times K_w$ matrix. The maximum over the two spatial axes is
+\begin{lstlisting}
+max_element = np.max(window, axis=(1, 2))
+# (B, C)
+\end{lstlisting}
+and can be written into one output spatial position:
+\begin{lstlisting}
+output[:, output_row, output_col, :] = max_element
+\end{lstlisting}
+
+\subsection{Why the forward pass must remember the winner}
+
+The backward pass needs to know which local input coordinate produced each maximum. The maximum value alone is not enough. Therefore the spatial part of the window is flattened:
+\begin{lstlisting}
+flat_window = np.reshape(window, (B, Kh * Kw, C))
+# axis 0 -> batch
+# axis 1 -> flattened local spatial position
+# axis 2 -> channel
+\end{lstlisting}
+
+Then
+\begin{lstlisting}
+max_element_idx = np.argmax(flat_window, axis=1)
+# (B, C)
+\end{lstlisting}
+stores one local flattened index for each $(b,c)$ pair.
+
+For a $2\times2$ window, the local index map is
+\[
+\begin{matrix}
+0 & 1\\
+2 & 3
+\end{matrix}.
+\]
+If the winner is local row $1$, column $0$, the stored index is $2$. These are \emph{local window coordinates}; they are not coordinates in the full input tensor.
+
+\subsection{Backward derivative of the max operation}
+
+For one scalar pooled output
+\[
+y=\max(x_1,\ldots,x_n),
+\]
+assuming a unique maximum at index $m$,
+\[
+\pd{y}{x_j}
+=
+\begin{cases}
+1,&j=m,\\
+0,&j\ne m.
+\end{cases}
+\]
+Therefore
+\[
+\pd{L}{x_j}
+=
+\pd{L}{y}\pd{y}{x_j}
+=
+\begin{cases}
+dout,&j=m,\\
+0,&j\ne m.
+\end{cases}
+\]
+
+This is the entire mathematical idea behind MaxPooling backward: route each upstream gradient to the winner from the forward pass.
+
+If multiple elements are exactly tied for the maximum, the mathematical max function is nondifferentiable at that point. An \code{argmax}-based implementation chooses one winner according to NumPy's tie-breaking behavior and sends the gradient there. This convention is deterministic and sufficient for the framework.
+
+\subsection{Backward pass: fully explicit interpretation}
+
+The most direct code would be:
+\begin{lstlisting}
+din = np.zeros_like(input)
+
+for output_row in range(Hout):
+    for output_col in range(Wout):
+        input_row = output_row * stride
+        input_col = output_col * stride
+
+        for b in range(B):
+            for c in range(C):
+                flat_idx = self.max_element_idx[
+                    b, output_row, output_col, c
+                ]
+
+                window_row, window_col = np.unravel_index(
+                    flat_idx,
+                    (Kh, Kw),
+                )
+
+                global_row = input_row + window_row
+                global_col = input_col + window_col
+
+                din[b, global_row, global_col, c] += (
+                    dout[b, output_row, output_col, c]
+                )
+\end{lstlisting}
+
+This explicit version is the reference implementation conceptually. The vectorized code performs the same coordinate construction without the inner loops over batch and channels.
+
+\subsection{Recovering local coordinates from the flattened winner index}
+
+At one output position,
+\begin{lstlisting}
+flat_window_idxs = self.max_element_idx[
+    :, output_row, output_col, :
+]
+# (B, C)
+\end{lstlisting}
+contains a local flattened winner index for every image and channel.
+
+Calling
+\begin{lstlisting}
+window_rows, window_cols = np.unravel_index(
+    flat_window_idxs,
+    (Kh, Kw),
+)
+\end{lstlisting}
+returns two arrays of shape $(B,C)$. For each pair $(b,c)$,
+\[
+(window\_rows_{b,c},window\_cols_{b,c})
+\]
+is the local two-dimensional position of the maximum.
+
+For a $2\times3$ window,
+\[
+\begin{matrix}
+0&1&2\\
+3&4&5
+\end{matrix},
+\]
+so flat index $4$ maps to local coordinate $(1,1)$.
+
+\subsection{Local-to-global coordinate mapping}
+
+The pooling window for output location $(h,w)$ starts at
+\[
+input\_row=hs,
+\qquad
+input\_col=ws.
+\]
+Therefore
+\[
+\boxed{
+global\_row=hs+window\_row,
+\qquad
+global\_col=ws+window\_col
+}.
+\]
+In code:
+\begin{lstlisting}
+global_rows = input_row + window_rows
+# (B, C)
+
+global_cols = input_col + window_cols
+# (B, C)
+\end{lstlisting}
+
+At this point the destination coordinate for every $(b,c)$ pair is known.
+
+\subsection{Vectorizing the batch/channel loops with advanced indexing}
+
+Create batch and channel index arrays:
+\begin{lstlisting}
+batch_idx = np.arange(B)[:, np.newaxis]      # (B, 1)
+channel_idx = np.arange(C)[np.newaxis, :]    # (1, C)
+\end{lstlisting}
+
+Broadcasting makes them conceptually align with the $(B,C)$ arrays \code{global\_rows} and \code{global\_cols}. The advanced-index expression
+\begin{lstlisting}
+din[batch_idx, global_rows, global_cols, channel_idx]
+\end{lstlisting}
+selects exactly one input element for every $(b,c)$ pair:
+\[
+(b,\;global\_rows_{b,c},\;global\_cols_{b,c},\;c).
+\]
+
+The upstream gradients at the current output spatial location are
+\begin{lstlisting}
+dout[:, output_row, output_col, :]
+# (B, C)
+\end{lstlisting}
+so the vectorized routing operation is
+\begin{lstlisting}
+din[
+    batch_idx,
+    global_rows,
+    global_cols,
+    channel_idx,
+] += dout[:, output_row, output_col, :]
+\end{lstlisting}
+
+This line replaces only the loops over $b$ and $c$. The outer loops over output spatial positions may remain because the purpose is clarity and because they are much smaller than a fully scalar implementation.
+
+\subsection{Why MaxPooling backward also uses accumulation}
+
+If pooling windows overlap, the same input element may be the maximum for more than one pooling window. Then multiple output values depend on that same input value, and the chain rule requires their gradient paths to be added.
+
+Thus
+\begin{lstlisting}
++=
+\end{lstlisting}
+is correct, whereas plain assignment could erase an earlier contribution.
+
+The mental model is:
+\begin{quote}
+During forward, each pooled output remembers which local input element won. During backward, each upstream gradient is routed back to that winner. If several pooled outputs route to the same input, the contributions are summed.
+\end{quote}
+
+\subsection{MaxPooling shape and indexing summary}
+
+For a fixed output spatial location:
+\begin{align*}
+\text{stored flat winner indices} &: (B,C),\\
+\text{local winner rows} &: (B,C),\\
+\text{local winner cols} &: (B,C),\\
+\text{global winner rows} &: (B,C),\\
+\text{global winner cols} &: (B,C),\\
+\text{upstream gradients} &: (B,C).
+\end{align*}
+The advanced-index assignment performs the same $(b,c)$-wise operation that the explicit nested loops would perform.
+
+\newpage
+\section{Batch Normalization}
+
+\subsection{Why BatchNorm is more difficult to differentiate}
+
+Batch Normalization is one of the most useful layers for learning the computational-graph view of backpropagation. A Dense or Conv output can often be differentiated directly from one compact equation. BatchNorm is different because each input feature value contributes to the batch statistics that are then reused to normalize many values.
+
+For one feature/channel, an input $x_i$ affects the loss through several paths:
+\begin{enumerate}[leftmargin=2em]
+    \item directly through its centered value $x_i-\mu$,
+    \item through the mean $\mu$, which affects every centered value,
+    \item through the variance, which depends on all centered values,
+    \item through the inverse standard deviation, which scales every normalized value.
+\end{enumerate}
+
+The safest derivation is therefore to write BatchNorm as a sequence of small forward operations and reverse them one by one.
+
+\subsection{Generic reduction convention}
+
+The project uses the last tensor dimension as the feature/channel dimension. Therefore BatchNorm can use the same implementation for Dense and Conv inputs.
+
+For Dense:
+\[
+X:(B,D),
+\]
+so statistics are reduced over axis $0$.
+
+For Conv:
+\[
+X:(B,H,W,C),
+\]
+so statistics are reduced over axes $(0,1,2)$ independently for each channel.
+
+This can be represented as
+\begin{lstlisting}
+reduction_axis = tuple(range(input.ndim - 1))
+N = np.prod(input.shape[:-1])
+\end{lstlisting}
+
+For the derivation, all reduced dimensions are collapsed conceptually into one index $i\in\{1,\ldots,N\}$. The feature/channel index is denoted by $c$.
+
+\subsection{Training forward pass: computational graph}
+
+For each feature $c$:
+\begin{align}
+\mu_c &= \frac{1}{N}\sum_i x_{i,c},\\
+\tilde{x}_{i,c} &= x_{i,c}-\mu_c,\\
+\sigma_c^2 &= \frac{1}{N}\sum_i \tilde{x}_{i,c}^2,\\
+r_c &= (\sigma_c^2+\epsilon)^{-1/2},\\
+\hat{x}_{i,c} &= \tilde{x}_{i,c}r_c,\\
+y_{i,c} &= \gamma_c\hat{x}_{i,c}+\beta_c.
+\end{align}
+
+The trainable parameters are
+\[
+\gamma,\beta\in\R^C.
+\]
+The batch statistics $\mu$ and $\sigma^2$ are not trainable parameters.
+
+A vectorized forward implementation follows these operations:
+\begin{lstlisting}
+mean = np.mean(input, axis=reduction_axis, keepdims=True)
+centered = input - mean
+variance = np.mean(centered ** 2, axis=reduction_axis, keepdims=True)
+inv_std = 1.0 / np.sqrt(variance + self.epsilon)
+normalized = centered * inv_std
+output = self.gamma * normalized + self.beta
+\end{lstlisting}
+
+Because the last dimension is the feature dimension, \code{gamma} and \code{beta} broadcast over every reduced axis.
+
+\subsection{Running statistics and inference}
+
+During training, BatchNorm also updates persistent running statistics. With momentum $m$ under the convention used by the project, the update is conceptually of the form
+\[
+running\_mean
+\leftarrow
+m\,running\_mean+(1-m)\,batch\_mean,
+\]
+\[
+running\_variance
+\leftarrow
+m\,running\_variance+(1-m)\,batch\_variance.
+\]
+
+During inference, the current batch must not define the normalization statistics. Instead,
+\[
+\hat{x}
+=
+\frac{x-running\_mean}{\sqrt{running\_variance+\epsilon}},
+\qquad
+y=\gamma\hat{x}+\beta.
+\]
+
+This is why BatchNorm contains both trainable state $(\gamma,\beta)$ and persistent non-trainable state $(running\_mean,running\_variance)$. A complete model restore intended for inference must restore all four.
+
+\subsection{Backward starting point}
+
+Let
+\[
+g_{i,c}=\pd{L}{y_{i,c}}=dout_{i,c}.
+\]
+We now reverse the small forward operations rather than jumping to a memorized compact BatchNorm formula.
+
+\subsection{Gradients of $\beta$ and $\gamma$}
+
+From
+\[
+y_{i,c}=\gamma_c\hat{x}_{i,c}+\beta_c,
+\]
+we have
+\[
+\pd{y_{i,c}}{\beta_c}=1,
+\qquad
+\pd{y_{i,c}}{\gamma_c}=\hat{x}_{i,c}.
+\]
+Since the same $\beta_c$ and $\gamma_c$ are shared over all $N$ normalized positions,
+\[
+\boxed{
+d\beta_c=\sum_i g_{i,c}}
+\]
+and
+\[
+\boxed{
+d\gamma_c=\sum_i g_{i,c}\hat{x}_{i,c}}.
+\]
+
+Vectorized:
+\begin{lstlisting}
+self.dbeta[...] = np.sum(dout, axis=reduction_axis)
+self.dgamma[...] = np.sum(dout * self.normalized, axis=reduction_axis)
+\end{lstlisting}
+
+The in-place assignment with \code{[...]} matters because optimizers may already hold references to the gradient arrays returned by \code{parameters()}.
+
+\subsection{Backward through the affine scale}
+
+The normalized activation receives
+\[
+\boxed{
+d\hat{x}_{i,c}=g_{i,c}\gamma_c}.
+\]
+Vectorized:
+\begin{lstlisting}
+dnormalized = dout * self.gamma
+\end{lstlisting}
+
+\subsection{Backward through $\hat{x}=\tilde{x}\,r$}
+
+The normalized value is a product:
+\[
+\hat{x}_{i,c}=\tilde{x}_{i,c}r_c.
+\]
+Therefore it creates two gradient paths.
+
+First, the direct path to the centered value:
+\[
+\left(d\tilde{x}_{i,c}\right)_{direct}
+=
+d\hat{x}_{i,c}\,r_c.
+\]
+
+Second, the path to the shared inverse standard deviation:
+\[
+\pd{\hat{x}_{i,c}}{r_c}=\tilde{x}_{i,c}.
+\]
+Since the same $r_c$ is used for all $i$,
+\[
+\boxed{
+dr_c=\sum_i d\hat{x}_{i,c}\tilde{x}_{i,c}}.
+\]
+
+Vectorized:
+\begin{lstlisting}
+dcentered_direct = dnormalized * self.inv_std
+
+dinv_std = np.sum(
+    dnormalized * self.centered,
+    axis=reduction_axis,
+    keepdims=True,
+)
+\end{lstlisting}
+
+\subsection{Backward through inverse standard deviation}
+
+The forward operation is
+\[
+r_c=(\sigma_c^2+\epsilon)^{-1/2}.
+\]
+Its derivative is
+\[
+\pd{r_c}{\sigma_c^2}
+=-\frac{1}{2}(\sigma_c^2+\epsilon)^{-3/2}.
+\]
+Therefore
+\[
+\boxed{
+d\sigma_c^2
+=dr_c\left[-\frac{1}{2}(\sigma_c^2+\epsilon)^{-3/2}\right]}.
+\]
+
+A code form is:
+\begin{lstlisting}
+dvariance = (
+    dinv_std
+    * (-0.5)
+    * (self.variance + self.epsilon) ** (-1.5)
+)
+\end{lstlisting}
+
+\subsection{Backward through the variance}
+
+The variance is
+\[
+\sigma_c^2
+=
+\frac{1}{N}\sum_i\tilde{x}_{i,c}^2.
+\]
+For one centered value,
+\[
+\pd{\sigma_c^2}{\tilde{x}_{i,c}}
+=
+\frac{2}{N}\tilde{x}_{i,c}.
+\]
+Therefore the variance path contributes
+\[
+\boxed{
+\left(d\tilde{x}_{i,c}\right)_{var}
+=
+d\sigma_c^2\frac{2}{N}\tilde{x}_{i,c}
+}.
+\]
+
+Vectorized:
+\begin{lstlisting}
+dcentered_from_variance = (
+    dvariance * (2.0 / N) * self.centered
+)
+\end{lstlisting}
+
+Now the same centered variable has received gradients through two distinct computational paths, so they must be added:
+\begin{lstlisting}
+dcentered = dcentered_direct + dcentered_from_variance
+\end{lstlisting}
+
+This addition is an important example of gradient accumulation that comes directly from the graph structure.
+
+\subsection{Backward through centering: $\tilde{x}=x-\mu$}
+
+Each centered value satisfies
+\[
+\tilde{x}_{i,c}=x_{i,c}-\mu_c.
+\]
+The direct derivative to its own input is
+\[
+\pd{\tilde{x}_{i,c}}{x_{i,c}}=1.
+\]
+The derivative with respect to the shared mean is
+\[
+\pd{\tilde{x}_{i,c}}{\mu_c}=-1.
+\]
+Therefore all centered values contribute to the mean gradient:
+\[
+\boxed{
+d\mu_c=-\sum_i d\tilde{x}_{i,c}}.
+\]
+
+Vectorized:
+\begin{lstlisting}
+dmean = -np.sum(
+    dcentered,
+    axis=reduction_axis,
+    keepdims=True,
+)
+\end{lstlisting}
+
+\subsection{Backward through the mean}
+
+The mean is
+\[
+\mu_c=\frac{1}{N}\sum_i x_{i,c}.
+\]
+For every $i$,
+\[
+\pd{\mu_c}{x_{i,c}}=\frac{1}{N}.
+\]
+Hence the mean path contributes the same amount to every input:
+\[
+\left(dx_{i,c}\right)_{mean}=d\mu_c\frac{1}{N}.
+\]
+
+The input also receives the direct centering gradient $d\tilde{x}_{i,c}$. Adding both paths gives
+\[
+\boxed{
+dx_{i,c}=d\tilde{x}_{i,c}+\frac{d\mu_c}{N}}.
+\]
+
+Vectorized:
+\begin{lstlisting}
+din = dcentered + dmean / N
+\end{lstlisting}
+
+\subsection{BatchNorm backward as a reversed computational graph}
+
+The full backward can be read in reverse order from the forward graph:
+\begin{lstlisting}
+# y = gamma * normalized + beta
+self.dbeta[...] = np.sum(dout, axis=reduction_axis)
+self.dgamma[...] = np.sum(
+    dout * self.normalized,
+    axis=reduction_axis,
+)
+dnormalized = dout * self.gamma
+
+# normalized = centered * inv_std
+dcentered_direct = dnormalized * self.inv_std
+dinv_std = np.sum(
+    dnormalized * self.centered,
+    axis=reduction_axis,
+    keepdims=True,
+)
+
+# inv_std = (variance + eps)^(-1/2)
+dvariance = (
+    dinv_std
+    * (-0.5)
+    * (self.variance + self.epsilon) ** (-1.5)
+)
+
+# variance = mean(centered ** 2)
+dcentered_from_variance = (
+    dvariance * (2.0 / N) * self.centered
+)
+dcentered = dcentered_direct + dcentered_from_variance
+
+# centered = input - mean
+dmean = -np.sum(
+    dcentered,
+    axis=reduction_axis,
+    keepdims=True,
+)
+
+# mean = mean(input)
+din = dcentered + dmean / N
+\end{lstlisting}
+
+This form is intentionally longer than a compact closed-form BatchNorm derivative. It mirrors the actual forward graph and makes every gradient path visible.
+
+\subsection{Why the generic Dense/Conv implementation works}
+
+The equations above use an abstract reduced index $i$. For Dense input $(B,D)$, $i$ is the batch index. For Conv input $(B,H,W,C)$, $i$ represents the combined tuple $(b,h,w)$. The feature dimension remains last in both cases.
+
+Thus operations such as
+\begin{lstlisting}
+np.sum(..., axis=reduction_axis, keepdims=True)
+\end{lstlisting}
+perform exactly the mathematical sum over $i$ while preserving a broadcastable last-dimension feature tensor.
+
+\subsection{Training versus inference backward}
+
+Backpropagation is part of training. During normal inference, BatchNorm uses running statistics and no backward pass is performed. The important lifecycle distinction is therefore:
+\begin{itemize}
+    \item \textbf{training forward:} use batch statistics, update running statistics, cache intermediates needed by backward;
+    \item \textbf{evaluation forward:} use running statistics and do not update them;
+    \item \textbf{backward:} used only for a training forward whose cached graph is valid.
+\end{itemize}
+
+\newpage
+\section{Dropout}
+
+\subsection{Purpose}
+
+Dropout is a training-time regularization technique. It randomly removes activations so that the network cannot rely too strongly on particular activation paths. The project uses \textbf{inverted dropout}, which performs the scaling during training so that evaluation requires no rescaling.
+
+Let the drop probability be $p$ and the keep probability be
+\[
+q=1-p.
+\]
+
+\subsection{Training forward pass}
+
+For each activation $x_i$, sample a Bernoulli mask
+\[
+m_i\sim\mathrm{Bernoulli}(q).
+\]
+In inverted dropout,
+\[
+\boxed{y_i=x_i\frac{m_i}{q}}.
+\]
+Thus an activation is either zero or scaled by $1/q$.
+
+The expectation is preserved:
+\[
+\mathbb{E}[y_i]
+=x_i\frac{\mathbb{E}[m_i]}{q}
+=x_i\frac{q}{q}
+=x_i.
+\]
+
+A typical vectorized implementation is:
+\begin{lstlisting}
+keep_prob = 1.0 - self.drop_prob
+self.mask = (self.rng.random(input.shape) < keep_prob) / keep_prob
+output = input * self.mask
+\end{lstlisting}
+
+\subsection{Training backward pass}
+
+During a particular forward pass, the mask is a fixed tensor. Therefore
+\[
+\pd{y_i}{x_i}=\frac{m_i}{q}.
+\]
+The input gradient is
+\[
+\boxed{dx_i=dout_i\frac{m_i}{q}}.
+\]
+If the forward implementation stores the already-scaled mask, the backward is simply
+\begin{lstlisting}
+din = dout * self.mask
+\end{lstlisting}
+
+Dropped activations receive zero gradient because their forward computational path was removed for that training step.
+
+\subsection{Evaluation behavior}
+
+Because inverted dropout preserves the activation expectation during training, evaluation is the identity function:
+\[
+\boxed{y=x}.
+\]
+Thus
+\begin{lstlisting}
+if not self.training:
+    return input
+\end{lstlisting}
+No random mask should be generated during evaluation.
+
+\subsection{Dropout and model lifecycle}
+
+Dropout is one reason a model-level \code{train()} / \code{eval()} API is useful. The layer's numerical operation depends on mode even though it has no trainable parameters.
+
+A useful behavioral unit test is:
+\begin{quote}
+After switching the model or layer to evaluation mode, Dropout output must be exactly equal to the input.
+\end{quote}
+
+\section{Softmax with Cross-Entropy Loss}
+
+\subsection{Logits and probabilities}
+
+The final Dense layer produces logits
+\[
+Z\in\R^{B\times M},
+\]
+where $M$ is the number of classes. For one sample, Softmax defines
+\[
+p_i=\frac{e^{z_i}}{\sum_j e^{z_j}}.
+\]
+For a batch, Softmax is applied independently to each row. Samples do not interact through the class normalization.
+
+\subsection{Numerically stable Softmax}
+
+Direct exponentiation can overflow for large logits. For each sample $b$, let
+\[
+m_b=\max_j z_{b,j}.
+\]
+Subtracting $m_b$ does not change Softmax probabilities:
+\[
+p_{b,i}
+=
+\frac{e^{z_{b,i}-m_b}}
+{\sum_j e^{z_{b,j}-m_b}}.
+\]
+The largest shifted logit is zero, so no exponent is positive.
+
+Vectorized:
+\begin{lstlisting}
+max_logits = np.max(logits, axis=1, keepdims=True)
+shifted = logits - max_logits
+exp_shifted = np.exp(shifted)
+probabilities = exp_shifted / np.sum(
+    exp_shifted,
+    axis=1,
+    keepdims=True,
+)
+\end{lstlisting}
+
+\subsection{Cross-Entropy}
+
+For sample $b$ with integer target class $y_b$,
+\[
+L_b=-\log p_{b,y_b}.
+\]
+The batch loss is the mean
+\[
+\boxed{
+L=\frac{1}{B}\sum_b L_b
+}.
+\]
+
+\subsection{Stable combined forward using log-sum-exp}
+
+Computing $-\log p_{b,y_b}$ after explicitly forming a very small probability can underflow. A more stable expression works directly with logits.
+
+Starting from
+\[
+L_b=-\log\left(
+\frac{e^{z_{b,y_b}}}{\sum_j e^{z_{b,j}}}
+\right),
+\]
+we obtain
+\[
+L_b=-z_{b,y_b}+\log\sum_j e^{z_{b,j}}.
+\]
+Using $m_b=\max_j z_{b,j}$,
+\[
+\log\sum_j e^{z_{b,j}}
+=
+m_b+\log\sum_j e^{z_{b,j}-m_b}.
+\]
+Therefore
+\[
+\boxed{
+L_b
+=
+-z_{b,y_b}
++m_b
++\log\sum_j e^{z_{b,j}-m_b}
+}.
+\]
+
+At least one shifted exponent is exactly $e^0=1$, so the logarithm receives a positive finite sum even if very small-class exponentials underflow to zero.
+
+\subsection{Backward: component-wise derivation}
+
+We want
+\[
+\pd{L}{z_{b,i}}.
+\]
+Since the batch loss is a mean and sample $b$ affects only $L_b$,
+\[
+\pd{L}{z_{b,i}}
+=
+\frac{1}{B}\pd{L_b}{z_{b,i}}.
+\]
+Let $k=y_b$ be the correct class. The sample loss is
+\[
+L_b=-\log p_{b,k}.
+\]
+Thus
+\[
+\pd{L_b}{p_{b,k}}=-\frac{1}{p_{b,k}}.
+\]
+
+The Softmax derivative has two cases:
+\[
+\pd{p_k}{z_i}
+=
+\begin{cases}
+p_k(1-p_k),&i=k,\\-p_kp_i,&i\ne k.
+\end{cases}
+\]
+
+For an incorrect class $i\ne k$,
+\[
+\pd{L}{z_{b,i}}
+=
+\frac{1}{B}
+\left(-\frac{1}{p_{b,k}}\right)
+(-p_{b,k}p_{b,i})
+=
+\boxed{\frac{p_{b,i}}{B}}.
+\]
+
+For the correct class $i=k$,
+\[
+\pd{L}{z_{b,k}}
+=
+\frac{1}{B}
+\left(-\frac{1}{p_{b,k}}\right)
+p_{b,k}(1-p_{b,k})
+=
+\boxed{\frac{p_{b,k}-1}{B}}.
+\]
+
+Combining both cases, if $Y$ is the conceptual one-hot label matrix,
+\[
+\boxed{
+\pd{L}{Z}=\frac{P-Y}{B}
+}.
+\]
+
+\subsection{Vectorized backward without constructing one-hot labels}
+
+Integer labels already tell us which entry in each row should subtract one:
+\begin{lstlisting}
+dlogits = self.probabilities.copy()
+dlogits[np.arange(B), y] -= 1.0
+dlogits /= B
+\end{lstlisting}
+
+The output has shape $(B,M)$ and can be passed directly to the final Dense layer's backward method.
+
+\subsection{Meaning of the gradient signs}
+
+For an incorrect class,
+\[
+\pd{L}{z_i}=p_i/B>0.
+\]
+Gradient descent subtracts a positive quantity, tending to decrease the incorrect logit.
+
+For the correct class,
+\[
+\pd{L}{z_k}=(p_k-1)/B<0,
+\]
+so gradient descent subtracts a negative quantity, tending to increase the correct logit.
+
+\section{Sequential Model Composition}
+
+\subsection{The model as a composition of functions}
+
+A Sequential model with layers $f_1,\ldots,f_n$ represents
+\[
+F(x)=f_n(f_{n-1}(\cdots f_2(f_1(x))\cdots)).
+\]
+The forward pass applies layers from first to last:
+\begin{lstlisting}
+def forward(self, input):
+    x = input
+    for layer in self.layers:
+        x = layer.forward(x)
+    return x
+\end{lstlisting}
+
+Each layer caches only the information it needs for its own backward pass.
+
+\subsection{Backward as repeated chain rule}
+
+If
+\[
+x_0\xrightarrow{f_1}x_1\xrightarrow{f_2}\cdots\xrightarrow{f_n}x_n\xrightarrow{}L,
+\]
+then backpropagation starts from $dL/dx_n$ and applies the local Jacobian of each layer in reverse order:
+\[
+\pd{L}{x_{k-1}}
+=
+\pd{L}{x_k}
+\pd{x_k}{x_{k-1}}.
+\]
+
+The Sequential implementation therefore reverses the layer order:
+\begin{lstlisting}
+def backward(self, dout):
+    grad = dout
+    for layer in reversed(self.layers):
+        grad = layer.backward(grad)
+    return grad
+\end{lstlisting}
+
+The model does not need to know the mathematical details of Dense, Conv2D, BatchNorm, or ReLU. It only relies on a consistent local contract: \code{forward()} transforms activations, and \code{backward()} transforms the gradient with respect to the layer output into the gradient with respect to its input while filling parameter-gradient buffers when applicable.
+
+\subsection{Build lifecycle}
+
+Some layer dimensions are known only after the previous layer's output shape is known. A \code{build()} lifecycle allows each layer to allocate its parameters once the input feature shape is available.
+
+The \code{built} flag acts as a lifecycle guard. It prevents accidental parameter reinitialization if the model is used again after construction.
+
+A typical model build walks forward through the layers, passing each output shape to the next layer. The important design principle is that parameter creation belongs to the layer that owns those parameters.
+
+\subsection{Parameter references}
+
+Trainable layers expose parameter/gradient pairs through an interface conceptually like
+\begin{lstlisting}
+[
+    (parameter_array, gradient_array),
+    ...
+]
+\end{lstlisting}
+The returned arrays are references to the actual NumPy arrays stored inside the layers.
+
+This allows an optimizer to update parameters in place without the Sequential model knowing which layer owns them.
+
+It also creates an important reference rule. If an optimizer has retained a reference to a gradient array, a layer should update that gradient array in place:
+\begin{lstlisting}
+self.dgamma[...] = computed_gradient
+\end{lstlisting}
+rather than replacing the array object:
+\begin{lstlisting}
+self.dgamma = computed_gradient   # may break an existing reference
+\end{lstlisting}
+
+\subsection{Train and evaluation mode propagation}
+
+The model-level API
+\begin{lstlisting}
+model.train()
+model.eval()
+\end{lstlisting}
+propagates the mode to layers whose behavior differs between training and inference.
+
+Most layers are mode-independent. BatchNorm and Dropout are not:
+\begin{itemize}
+    \item BatchNorm training uses batch statistics and updates running state; evaluation uses stored running statistics.
+    \item Dropout training samples a random mask; evaluation is identity.
+\end{itemize}
+
+A model-level mode switch avoids forcing the training loop to know which specific layers require mode changes.
+
+\subsection{Persistent state and restoration}
+
+The project's \code{get\_weights()} / \code{set\_weights()} concept is broader than trainable weights alone. It represents the persistent state required to restore the model's behavior.
+
+For Dense and Conv2D this includes trainable parameters. For BatchNorm it must include
+\[
+\gamma,\beta,running\_mean,running\_variance.
+\]
+This distinction is essential for Early Stopping: restoring only $\gamma$ and $\beta$ while leaving later running statistics would not restore the exact inference model that achieved the best validation loss.
+
+\section{Optimizers}
+
+\subsection{Role of an optimizer}
+
+Backpropagation computes gradients. It does not decide how parameters are updated. The optimizer receives references to parameter arrays and their corresponding gradient arrays and applies an update rule in place.
+
+For a generic parameter $\theta$ with gradient
+\[
+g_t=\pd{L}{\theta_t},
+\]
+different optimizers differ in how they transform $g_t$ before modifying $\theta_t$.
+
+\subsection{SGD}
+
+Plain stochastic gradient descent uses
+\[
+\boxed{
+\theta_{t+1}=\theta_t-\eta g_t
+}
+\]
+where $\eta$ is the learning rate.
+
+Implementation:
+\begin{lstlisting}
+for parameter, gradient in self.parameters_grads:
+    parameter[...] -= self.learning_rate * gradient
+\end{lstlisting}
+
+There is no per-parameter optimizer state beyond the current parameter itself.
+
+\subsection{SGD with Momentum}
+
+Momentum maintains a velocity $v_t$ for each parameter. One common convention is
+\[
+v_t=\beta v_{t-1}+(1-\beta)g_t,
+\]
+followed by
+\[
+\theta_{t+1}=\theta_t-\eta v_t.
+\]
+Another equally common convention omits $(1-\beta)$ and absorbs the scale into the learning-rate behavior. The implementation and documentation must use one convention consistently.
+
+Conceptually, momentum smooths noisy gradient directions and carries information from previous updates. Therefore each parameter needs its own velocity tensor with the same shape.
+
+\begin{lstlisting}
+for parameter, gradient in self.parameters_grads:
+    velocity = self.velocity[id(parameter)]
+    velocity[...] = beta * velocity + (1.0 - beta) * gradient
+    parameter[...] -= learning_rate * velocity
+\end{lstlisting}
+
+Using \code{id(parameter)} lets optimizer state be associated with the identity of the actual NumPy parameter object rather than with its numerical contents.
+
+\subsection{Adam: first and second moments}
+
+Adam maintains two state tensors per parameter:
+\[
+m_t=\beta_1m_{t-1}+(1-\beta_1)g_t,
+\]
+\[
+u_t=\beta_2u_{t-1}+(1-\beta_2)g_t^2.
+\]
+Here $m_t$ is an exponential moving average of gradients, while $u_t$ is an exponential moving average of squared gradients.
+
+At early timesteps both moving averages are biased toward zero because they start from zero. Adam therefore applies bias correction:
+\[
+\hat m_t=\frac{m_t}{1-\beta_1^t},
+\qquad
+\hat u_t=\frac{u_t}{1-\beta_2^t}.
+\]
+The parameter update is
+\[
+\boxed{
+\theta_{t+1}
+=
+\theta_t
+-
+\eta
+\frac{\hat m_t}{\sqrt{\hat u_t}+\epsilon}
+}.
+\]
+
+A representative update is:
+\begin{lstlisting}
+self.t += 1
+
+for parameter, gradient in self.parameters_grads:
+    key = id(parameter)
+    m = self.m[key]
+    u = self.u[key]
+
+    m[...] = self.b1 * m + (1.0 - self.b1) * gradient
+    u[...] = self.b2 * u + (1.0 - self.b2) * (gradient ** 2)
+
+    m_hat = m / (1.0 - self.b1 ** self.t)
+    u_hat = u / (1.0 - self.b2 ** self.t)
+
+    parameter[...] -= self.learning_rate * (
+        m_hat / (np.sqrt(u_hat) + self.epsilon)
+    )
+\end{lstlisting}
+
+\subsection{Why state is parameter-specific}
+
+Each weight tensor has its own optimization history. A Conv2D kernel and a Dense matrix cannot share the same $m$ or $u$ because their shapes and gradient histories differ.
+
+The project associates state with \code{id(parameter)}. This expresses object identity: two NumPy arrays containing equal values are still different trainable parameters if they are different array objects.
+
+This is also why checking whether a parameter belongs to a selected set of special parameters is naturally an identity question rather than an element-wise array-equality question.
+
+\subsection{Classical L2 regularization versus AdamW}
+
+Classical L2 regularization modifies the objective:
+\[
+L_{total}=L_{data}+\lambda\sum_j\theta_j^2.
+\]
+Its gradient is
+\[
+\pd{L_{total}}{\theta}
+=
+\pd{L_{data}}{\theta}+2\lambda\theta.
+\]
+With plain SGD this produces an update closely related to weight decay. With adaptive optimizers such as Adam, adding $2\lambda\theta$ to the gradient means the regularization term is also transformed by the adaptive moment machinery.
+
+AdamW instead decouples parameter decay from the data-gradient transformation.
+
+\subsection{AdamW update}
+
+The Adam portion is computed from the data gradient exactly as before. Separately, selected parameters are decayed:
+\[
+\theta
+\leftarrow
+\theta-\eta\lambda\theta
+-
+\eta\frac{\hat m}{\sqrt{\hat u}+\epsilon}.
+\]
+Equivalently,
+\[
+\boxed{
+\theta
+\leftarrow
+(1-\eta\lambda)\theta
+-
+\eta\,adam\_step
+}.
+\]
+
+A representative implementation is:
+\begin{lstlisting}
+if id(parameter) in self.decayable_ids:
+    parameter[...] *= (1.0 - self.learning_rate * self.weight_decay)
+
+parameter[...] -= self.learning_rate * adam_step
+\end{lstlisting}
+
+The important conceptual separation is:
+\begin{center}
+\textbf{data gradient} $\rightarrow$ Adam moments $\rightarrow$ adaptive step\\
+\textbf{parameter value} $\rightarrow$ independent decoupled decay
+\end{center}
+The decay term does not enter $m$ or $u$.
+
+\subsection{Which parameters are decayable}
+
+The final design treats Conv/Dense weight tensors as decayable while excluding common offset/normalization parameters such as
+\begin{itemize}
+    \item Dense and Conv biases,
+    \item BatchNorm $\gamma$,
+    \item BatchNorm $\beta$.
+\end{itemize}
+
+The optimizer may receive a list of decayable parameter arrays and convert it to
+\begin{lstlisting}
+self.decayable_ids = {
+    id(parameter) for parameter in decayable_parameters
+}
+\end{lstlisting}
+The membership test then asks whether the current parameter is the exact same NumPy object as one marked for decay.
+
+\subsection{In-place updates and reference stability}
+
+Because optimizers hold parameter references, updates must mutate the existing arrays:
+\begin{lstlisting}
+parameter[...] -= update
+\end{lstlisting}
+rather than replacing the local variable with a new array object.
+
+This reference-based design keeps the optimizer independent of layer classes while avoiding a heavier \code{Parameter} abstraction.
+
+\section{Early Stopping}
+
+\subsection{Why Early Stopping is model selection, not backpropagation}
+
+Early Stopping does not participate in the computational graph. It observes a validation metric between epochs and decides when further training is no longer useful. It also records the model state corresponding to the best validation result.
+
+For this project, the monitored metric is validation data loss. Smaller is better.
+
+\subsection{State}
+
+A minimal Early Stopping object needs state such as
+\begin{itemize}
+    \item \code{patience}: how many consecutive non-improving epochs are tolerated,
+    \item \code{min\_delta}: the minimum decrease required to count as a meaningful improvement,
+    \item \code{best\_loss}: best validation loss observed so far,
+    \item a counter of consecutive bad epochs,
+    \item a snapshot of the best persistent model state.
+\end{itemize}
+
+A typical improvement condition is
+\[
+current\_loss < best\_loss-min\_delta.
+\]
+This prevents tiny numerical fluctuations from resetting patience indefinitely.
+
+\subsection{Epoch-level logic}
+
+Conceptually:
+\begin{lstlisting}
+if val_loss < best_loss - min_delta:
+    best_loss = val_loss
+    bad_epochs = 0
+    best_state = model.get_weights()
+else:
+    bad_epochs += 1
+
+if bad_epochs >= patience:
+    stop_training = True
+\end{lstlisting}
+
+The exact comparison at the patience boundary should be documented and tested to avoid an off-by-one interpretation. A clear convention is: with \code{patience=3}, stop after three consecutive validation checks that fail the improvement criterion.
+
+\subsection{Why the best state must be copied}
+
+The model's parameter arrays continue to change after the best epoch. Therefore Early Stopping cannot merely store references to those arrays. It must snapshot their values, for example with copies inside the model-state interface.
+
+Otherwise the alleged ``best weights'' would silently keep changing as training continues.
+
+\subsection{Restoring BatchNorm correctly}
+
+A best-model restore is intended to recreate the inference model from the best validation epoch. For BatchNorm this requires more than $\gamma$ and $\beta$. It also requires the running mean and running variance from that epoch.
+
+Thus the model state should conceptually contain
+\[
+\text{all persistent state required to reproduce forward inference},
+\]
+not only arrays updated by the optimizer.
+
+This is an important distinction between
+\begin{itemize}
+    \item \textbf{trainable parameters}, used by the optimizer, and
+    \item \textbf{persistent model state}, used by checkpoint/restore.
+\end{itemize}
+
+\subsection{Final test evaluation}
+
+The correct final lifecycle is:
+\begin{enumerate}[leftmargin=2em]
+    \item train while monitoring validation loss;
+    \item stop when the Early Stopping criterion is met or the maximum epoch count is reached;
+    \item restore the best model state;
+    \item switch to evaluation mode;
+    \item evaluate exactly once on the held-out test set.
+\end{enumerate}
+
+The test set should not determine Early Stopping decisions or hyperparameter changes. It is reserved for the final estimate of generalization after model selection.
+
+\section{Training and Evaluation Lifecycle}
+
+\subsection{Mini-batch training}
+
+For each epoch, training mode is enabled before processing batches:
+\begin{lstlisting}
+model.train()
+
+for X_batch, y_batch in create_batches(...):
+    logits = model.forward(X_batch)
+    loss = criterion.forward(logits, y_batch)
+
+    dlogits = criterion.backward()
+    model.backward(dlogits)
+
+    optimizer.update()
+\end{lstlisting}
+
+This order matters:
+\begin{enumerate}[leftmargin=2em]
+    \item forward caches the current activations/intermediates;
+    \item loss computes a scalar objective and stores what its backward needs;
+    \item backward fills gradients for the same forward pass;
+    \item optimizer updates parameters only after all gradients have been computed.
+\end{enumerate}
+
+The training set is shuffled each epoch so that mini-batch composition changes over time.
+
+\subsection{Evaluation}
+
+Validation and test evaluation use
+\begin{lstlisting}
+model.eval()
+\end{lstlisting}
+followed by forward-only computation. There is no backward call and no optimizer update.
+
+This changes the behavior of Dropout and BatchNorm and also avoids unnecessary gradient work.
+
+\subsection{Loss reporting with AdamW}
+
+When using decoupled AdamW weight decay, the decay is part of the optimizer update rule rather than an explicit term in the criterion objective. Therefore clean training logs can report
+\begin{center}
+\code{train\_loss}, \code{train\_accuracy}, \code{val\_loss}, \code{val\_accuracy}
+\end{center}
+where the loss is the data/criterion loss.
+
+This makes the logged quantity directly comparable between training and validation and avoids describing AdamW decay as though it were a separate loss term.
+
+\subsection{Reproducibility and random number generators}
+
+Reproducibility is easier to reason about when randomness is explicit. Random initialization, data shuffling, and Dropout can use NumPy \code{Generator} objects created from known seeds.
+
+A seed does not guarantee bit-identical behavior across every possible NumPy/platform version, but it provides a reproducible experimental baseline and makes debugging much easier.
+
+\section{Numerical Gradient Checking}
+
+\subsection{Why gradient checking matters}
+
+A network can train even when a gradient contains a subtle error. Numerical gradient checking tests the local derivative itself, independently of whether an end-to-end CIFAR run appears plausible.
+
+For a scalar function $L(\theta)$, centered finite differences approximate
+\[
+\boxed{
+\pd{L}{\theta_i}
+\approx
+\frac{L(\theta_i+h)-L(\theta_i-h)}{2h}
+}.
+\]
+Centered differences have much lower truncation error than one-sided differences for sufficiently small $h$.
+
+\subsection{Converting a tensor output into a scalar test objective}
+
+Layer backward methods accept an arbitrary upstream gradient \code{dout}. To test exactly that backward computation, define the scalar objective
+\[
+\boxed{
+L=\sum output\had dout
+}.
+\]
+In code:
+\begin{lstlisting}
+L = np.sum(output * dout)
+\end{lstlisting}
+Then
+\[
+\pd{L}{output}=dout,
+\]
+so the analytical backward receives exactly the same upstream gradient represented by the finite-difference scalar objective.
+
+\subsection{Checking an input gradient}
+
+For each small input element $x_i$:
+\begin{lstlisting}
+original = x[index]
+
+x[index] = original + h
+loss_plus = scalar_loss(layer.forward(x), dout)
+
+x[index] = original - h
+loss_minus = scalar_loss(layer.forward(x), dout)
+
+x[index] = original
+numerical_dx[index] = (loss_plus - loss_minus) / (2 * h)
+\end{lstlisting}
+Compare the resulting numerical tensor with the analytical \code{din} returned by \code{backward()}.
+
+\subsection{Checking trainable parameters}
+
+The same procedure applies to Dense/Conv weights and biases or BatchNorm $\gamma$ and $\beta$. Perturb one parameter element while holding the others fixed, recompute the scalar loss, and compare the finite difference with the corresponding analytical gradient buffer.
+
+For Conv2D, tests should use very small tensors because each parameter/input element requires two forward passes.
+
+\subsection{Why float64 is useful for tests}
+
+Normal training can use \code{np.float32} for speed and memory efficiency. Finite differences subtract two nearby floating-point values, which is much more sensitive to rounding error. Therefore gradient-check tests should instantiate layers with \code{dtype=np.float64}.
+
+This motivates a consistent layer constructor interface with a default training dtype of float32 but explicit float64 support for mathematical tests.
+
+\subsection{Useful error measures}
+
+Absolute error is
+\[
+|g_{analytical}-g_{numerical}|.
+\]
+A scale-aware relative measure can be
+\[
+\frac{|g_a-g_n|}
+{\max(\epsilon,|g_a|+|g_n|)}.
+\]
+
+The exact threshold depends on the operation, finite-difference step, dtype, and whether the function is near a nondifferentiable point. Very small errors for smooth operations such as Dense and BatchNorm in float64 provide strong evidence that the implementation follows the derived mathematics.
+
+\subsection{Nondifferentiable operations}
+
+ReLU at exactly zero and MaxPooling at exact ties are nondifferentiable. Random gradient-check inputs should avoid such boundary cases; otherwise a finite-difference test may disagree with a perfectly reasonable implementation convention.
+
+\section{State, Identity, and Mutability in the NumPy Framework}
+
+\subsection{Why references matter}
+
+NumPy arrays are mutable objects. When \code{model.parameters()} returns an array, the optimizer can hold a reference to the same object stored by the layer. Therefore
+\begin{lstlisting}
+parameter[...] -= update
+\end{lstlisting}
+mutates the layer's real parameter tensor.
+
+No explicit ``copy back into the layer'' step is required.
+
+\subsection{Identity is different from equality}
+
+Two arrays can contain equal values without representing the same parameter object. Optimizer bookkeeping asks questions such as
+\begin{quote}
+``Is this exact parameter one of the arrays that should receive weight decay?''
+\end{quote}
+not
+\begin{quote}
+``Does this array currently contain values equal to some decayable array?''
+\end{quote}
+
+Therefore object identity, represented by \code{id(parameter)}, is appropriate for optimizer state maps and decayable-parameter sets.
+
+\subsection{Gradient-buffer identity}
+
+The same reasoning applies to gradient buffers. If an optimizer receives a reference to \code{self.dweights}, then later replacing
+\begin{lstlisting}
+self.dweights = new_array
+\end{lstlisting}
+creates a different object and can leave the optimizer pointing to the old one. Mutating instead with
+\begin{lstlisting}
+self.dweights[...] = new_values
+\end{lstlisting}
+preserves identity.
+
+This is a low-level framework detail, but it is an important consequence of choosing a lightweight array-reference design instead of a dedicated Parameter class.
+
+\section{Putting the Layers Together: One Backward Pass Through the Network}
+
+Consider a simplified chain
+\[
+X
+\rightarrow Conv
+\rightarrow BN
+\rightarrow ReLU
+\rightarrow Pool
+\rightarrow Flatten
+\rightarrow Dense
+\rightarrow Loss.
+\]
+The loss first produces $dL/dlogits$. Then:
+\begin{enumerate}[leftmargin=2em]
+    \item Dense backward computes its $dW$, $db$, and sends $dL/dX_{dense}$ to Flatten.
+    \item Flatten restores the convolutional activation shape without changing gradient values.
+    \item MaxPooling routes each upstream gradient to the stored winning input position, accumulating if pooled windows overlap.
+    \item ReLU masks gradients according to which pre-ReLU activations were positive.
+    \item BatchNorm computes $d\gamma$, $d\beta$, and propagates through normalization, variance, and mean, adding the multiple graph paths into each input.
+    \item Conv2D computes $db$, accumulates shared-weight contributions into $dW$, and computes $dX$ by first summing over filters per window occurrence and then scatter-adding overlapping occurrences back into input coordinates.
+\end{enumerate}
+
+The Sequential container only orchestrates this reverse order. Every mathematical detail remains local to the layer that owns the corresponding forward transformation.
+
+\section{A Worked Shape Trace for the CIFAR-10 Architecture}
+
+For batch size $32$, an example architecture is:
+\begin{longtable}{lll}
+\toprule
+Operation & Output shape & Comment\\
+\midrule
+Input & $(32,32,32,3)$ & NHWC RGB batch\\
+Conv2D, 32 filters & $(32,32,32,32)$ & $3\times3$, stride 1, padding 1\\
+BatchNorm + ReLU & $(32,32,32,32)$ & channel-wise BN\\
+Conv2D, 32 filters & $(32,32,32,32)$ & preserves spatial size\\
+BatchNorm + ReLU & $(32,32,32,32)$ & \\
+MaxPool & $(32,16,16,32)$ & spatial downsampling\\
+Conv2D, 64 filters & $(32,16,16,64)$ & \\
+BatchNorm + ReLU & $(32,16,16,64)$ & \\
+Conv2D, 64 filters & $(32,16,16,64)$ & \\
+BatchNorm + ReLU & $(32,16,16,64)$ & \\
+MaxPool & $(32,8,8,64)$ & \\
+Flatten & $(32,4096)$ & $8\cdot8\cdot64=4096$\\
+Dense & $(32,256)$ & hidden representation\\
+BatchNorm + ReLU & $(32,256)$ & feature-wise BN\\
+Dropout & $(32,256)$ & training only\\
+Dense & $(32,10)$ & logits\\
+\bottomrule
+\end{longtable}
+
+The important architectural interface is that Conv2D and MaxPooling use four-dimensional NHWC tensors, while Flatten converts the representation into the two-dimensional batch-feature layout expected by Dense.
+
+\section{Testing Strategy}
+
+The project benefits from two complementary categories of tests.
+
+\subsection{Behavioral/API tests}
+
+These test software contracts rather than derivatives. Examples include:
+\begin{itemize}
+    \item batch creation and shuffling behavior,
+    \item train/validation split behavior,
+    \item optimizer construction,
+    \item Dropout evaluation identity,
+    \item BatchNorm running statistics changing in training but not evaluation,
+    \item \code{get\_weights()} / \code{set\_weights()} restoring persistent BatchNorm state,
+    \item Early Stopping patience/min-delta semantics,
+    \item AdamW not decaying biases or BatchNorm affine parameters,
+    \item learning rate and optimizer constructor validation.
+\end{itemize}
+
+\subsection{Mathematical tests}
+
+Numerical finite-difference tests should cover at least:
+\begin{itemize}
+    \item Dense: $dX$, $dW$, $db$,
+    \item Conv2D: $dX$, $dW$, $db$ on tiny tensors, including stride/padding cases,
+    \item BatchNorm: $dX$, $d\gamma$, $d\beta$ using float64,
+    \item optionally smooth local checks for other differentiable operations.
+\end{itemize}
+
+An end-to-end CIFAR-10 training run is valuable integration verification, but it is not a substitute for unit-level mathematical tests. The two answer different questions:
+\begin{quote}
+``Can the whole system learn?'' versus ``Is this derivative actually the derivative of this forward operation?''
+\end{quote}
+
+\section{Design Principles Reflected by the Framework}
+
+\subsection{Keep abstractions proportional to the project}
+
+The framework intentionally avoids introducing a large object hierarchy unless it solves an existing problem. For example, array references plus a small \code{parameters()} interface are sufficient for optimizer updates, so a full Parameter abstraction is not currently necessary.
+
+Likewise, a simple Sequential model is enough for a chain architecture. A general dynamic computation graph would add complexity without improving the educational goal of the project.
+
+\subsection{Make state ownership explicit}
+
+Each responsibility has a natural owner:
+\begin{itemize}
+    \item layers own parameters, gradients, and forward caches;
+    \item the Sequential model owns layer ordering and model mode propagation;
+    \item the loss owns the objective and its derivative with respect to logits;
+    \item the optimizer owns optimization state such as momentum/Adam moments and the current learning rate;
+    \item Early Stopping owns validation-history state and the best-model snapshot.
+\end{itemize}
+
+Clear ownership reduces hidden coupling between parts of the framework.
+
+\subsection{Prefer explainable vectorization}
+
+Vectorization is valuable because NumPy executes array operations in optimized compiled code, but the final expression should remain derivable from the scalar definition.
+
+The strongest examples in the project are:
+\begin{itemize}
+    \item Dense $dW$: an explicit sum of per-sample outer products becomes \code{dout.T @ X};
+    \item Conv2D $dW$: a sum across every use of a shared kernel weight becomes \code{flat\_dout.T @ flat\_windows};
+    \item Conv2D per-window $dX$: a sum over filters becomes \code{flat\_dout @ flat\_weights};
+    \item Conv2D final $dX$: overlapping window occurrences are merged with scatter-add;
+    \item MaxPooling backward: explicit batch/channel routing becomes broadcasting plus advanced indexing;
+    \item BatchNorm: a complicated compact derivative is replaced by a sequence of transparent vectorized local derivatives.
+\end{itemize}
+
+\section{Compact Reference: Forward and Backward Equations}
+
+\subsection{Dense}
+\[
+Z=XW^T+b,
+\]
+\[
+dX=dout\,W,
+\qquad
+dW=dout^TX,
+\qquad
+db=\sum_{batch}dout.
+\]
+
+\subsection{ReLU}
+\[
+y=\max(0,x),
+\qquad
+dx=dout\,\mathbf{1}[x>0].
+\]
+
+\subsection{Conv2D}
+\[
+z_{b,h,w,f}
+=
+\sum_{k_r,k_c,c}
+X^{(p)}_{b,hs+k_r,ws+k_c,c}
+W_{f,k_r,k_c,c}+b_f.
+\]
+\[
+db_f=\sum_{b,h,w}dout_{b,h,w,f}.
+\]
+\[
+dW_{f,k_r,k_c,c}
+=
+\sum_{b,h,w}
+dout_{b,h,w,f}
+X^{(p)}_{b,hs+k_r,ws+k_c,c}.
+\]
+\[
+dX^{(p)}_{b,i,j,c}
+=
+\sum_{\text{window occurrences mapping to }(i,j,c)}
+\sum_f dout\,W.
+\]
+
+\subsection{MaxPooling}
+\[
+y=\max(window),
+\]
+\[
+dx_j=
+\begin{cases}
+dout,&j=argmax(window),\\0,&\text{otherwise}.
+\end{cases}
+\]
+
+\subsection{BatchNorm}
+\[
+\mu=mean(x),\qquad
+\tilde{x}=x-\mu,
+\]
+\[
+\sigma^2=mean(\tilde{x}^2),\qquad
+r=(\sigma^2+\epsilon)^{-1/2},
+\]
+\[
+\hat{x}=\tilde{x}r,
+\qquad
+y=\gamma\hat{x}+\beta.
+\]
+The backward is most safely implemented by reversing exactly these operations.
+
+\subsection{Dropout}
+Training:
+\[
+y=x\frac{m}{1-p},
+\qquad
+dx=dout\frac{m}{1-p}.
+\]
+Evaluation:
+\[
+y=x.
+\]
+
+\subsection{Softmax Cross-Entropy}
+\[
+p_i=\frac{e^{z_i}}{\sum_j e^{z_j}},
+\qquad
+L=-\frac1B\sum_b\log p_{b,y_b},
+\]
+\[
+\boxed{dZ=\frac{P-Y}{B}}.
+\]
+
+\newpage
+\appendix
+\section{Appendix A: Conv2D Backward as Index Mappings}
+
+This appendix collects the two index mappings that make Conv2D backward easier to reconstruct from memory.
+
+\subsection{Window occurrence to padded input}
+
+Every extracted window element satisfies
+\[
+window[b,h,w,k_r,k_c,c]
+=
+padded\_input[b,hs+k_r,ws+k_c,c].
+\]
+Therefore the backward scatter uses the inverse interpretation:
+\begin{quote}
+A gradient stored at window coordinate $(b,h,w,k_r,k_c,c)$ must be added to padded-input coordinate $(b,hs+k_r,ws+k_c,c)$.
+\end{quote}
+
+\subsection{Flattened matrix indices}
+
+For matrix multiplication, define
+\[
+p\leftrightarrow(b,h,w),
+\qquad
+q\leftrightarrow(k_r,k_c,c).
+\]
+Then
+\[
+flat\_windows[p,q]
+=
+window[b,h,w,k_r,k_c,c],
+\]
+\[
+flat\_dout[p,f]
+=
+dout[b,h,w,f],
+\]
+\[
+flat\_weights[f,q]
+=
+W[f,k_r,k_c,c].
+\]
+This makes the two core matrix multiplications almost self-deriving:
+\[
+\underbrace{flat\_dout^T}_{F\times P}
+\underbrace{flat\_windows}_{P\times Q}
+\rightarrow
+\underbrace{dW_{flat}}_{F\times Q},
+\]
+\[
+\underbrace{flat\_dout}_{P\times F}
+\underbrace{flat\_weights}_{F\times Q}
+\rightarrow
+\underbrace{dwindows_{flat}}_{P\times Q}.
+\]
+The first sums over all window uses of each weight. The second sums over all filters through which one window element affects the loss.
+
+\section{Appendix B: BatchNorm Computational Graph Checklist}
+
+When re-deriving BatchNorm, write the forward as:
+\begin{enumerate}[leftmargin=2em]
+    \item $\mu=mean(x)$,
+    \item $x_c=x-\mu$,
+    \item $v=mean(x_c^2)$,
+    \item $r=(v+\epsilon)^{-1/2}$,
+    \item $\hat{x}=x_cr$,
+    \item $y=\gamma\hat{x}+\beta$.
+\end{enumerate}
+Then reverse the list. Whenever one forward variable fans out to multiple later operations, add the gradient contributions when they meet again. This procedure is more robust than trying to remember a final simplified $dx$ formula.
+
+\section{Appendix C: Suggested Repository Documentation Split}
+
+A clean repository can keep the README concise while linking to this technical document.
+
+The README can focus on:
+\begin{itemize}
+    \item project purpose and learning goals,
+    \item implemented layers and optimizers,
+    \item example model architecture,
+    \item installation and run instructions,
+    \item project structure,
+    \item test instructions,
+    \item final CIFAR-10 results,
+    \item a short link to these mathematical/implementation notes.
+\end{itemize}
+
+This document can remain the long-form explanation for readers who want to inspect the derivations and implementation reasoning in depth.
+
+\section{Appendix D: Final Mental Models}
+
+\paragraph{Dense $dW$.}
+One weight is reused by every sample. Compute one contribution $dout\cdot x$ per sample and sum them. Matrix multiplication performs all those sums at once.
+
+\paragraph{Conv2D $dW$.}
+One kernel weight is reused at every batch/spatial window. Its gradient is the sum of $dout\cdot$ corresponding-window-element over every use. \code{flat\_dout.T @ flat\_windows} is exactly that sum.
+
+\paragraph{Conv2D $dX$.}
+First compute the gradient of every input occurrence inside every window by summing through all filters. Then map window occurrences back to real input coordinates and add occurrences that refer to the same pixel.
+
+\paragraph{MaxPooling $dX$.}
+Remember the forward winner. Backward routes the upstream gradient only to that winner. Accumulate if overlapping windows route to the same input.
+
+\paragraph{BatchNorm $dX$.}
+Do not memorize the compact expression. Reverse the graph. An input influences normalization directly and through shared mean/variance statistics, so multiple paths must be summed.
+
+\paragraph{Sequential.}
+Forward is function composition from first layer to last. Backward is the chain rule applied in the reverse order.
+
+\paragraph{AdamW.}
+The data gradient goes through Adam's moment normalization. Weight decay is a separate parameter update and does not enter the moment estimates.
+
+\paragraph{Early Stopping.}
+Validation decides which persistent model state is best. Restore that state before final test evaluation; inference state such as BatchNorm running statistics is part of the model snapshot.
+
+\section*{Closing Note}
+\addcontentsline{toc}{section}{Closing Note}
+
+The main achievement of a from-scratch neural-network framework is not reproducing a familiar API. It is developing the ability to move between scalar mathematics, computational graphs, tensor shapes, explicit loops, and vectorized array operations without losing track of what each number represents.
+
+Whenever a vectorized line becomes difficult to understand, the reliable way back is:
+\begin{enumerate}[leftmargin=2em]
+    \item name one scalar output;
+    \item ask which scalar inputs/parameters influence it;
+    \item write the local derivative;
+    \item identify every path from the variable to the loss;
+    \item sum those path contributions;
+    \item write the explicit loops that perform the sum;
+    \item only then ask which loops NumPy can replace with reductions, matrix multiplication, broadcasting, reshaping, or scatter-add.
+\end{enumerate}
+
+That reasoning process is the common thread connecting every backward pass in this project.
+
+\end{document}
