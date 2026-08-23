@@ -1,26 +1,26 @@
 import numpy as np
 
 from project import create_batches, train_test_split, create_optimizer_object
-from cnn_numpy.optimizers import SGD, SGD_momentum, Adam
+from cnn_numpy.optimizers import SGD, SGD_momentum, Adam, AdamW
 from cnn_numpy.layers.batchnorm import BatchNorm
 from cnn_numpy.layers.dense import Dense
 from cnn_numpy.layers.conv import Conv2D
-
+from cnn_numpy.sequential import Sequential
+from cnn_numpy.layers.relu import ReLU
 
 def test_create_batches():
     X = np.arange(20).reshape(10, 2)
     y = np.arange(10)
 
-    batches = list(create_batches(X, y, batch_size=4, shuffle=False))
+    batches = list(create_batches(X, y, batch_size=4, shuffle=False))   # Get all batch tuples from generator in a list: [(X_batch_0, y_batch_0,), (X_batch_1,...)]
 
-    # 10 samples with batch size 4 -> 4, 4, 2
+    # 10 samples with batch size 4 -> 4, 4, 2 (3 batches)
     assert len(batches) == 3
     assert batches[0][0].shape[0] == 4
     assert batches[1][0].shape[0] == 4
     assert batches[2][0].shape[0] == 2
 
-    # Without shuffle, concatenating the batches
-    # should give us exactly the original dataset.
+    # Without shuffle, concatenating the batches gives the original dataset
     X_reconstructed = np.concatenate([X_batch for X_batch, _ in batches], axis=0)
 
     y_reconstructed = np.concatenate([y_batch for _, y_batch in batches], axis=0)
@@ -43,8 +43,7 @@ def test_train_test_split():
     assert len(X_train) == 8
     assert len(X_val) == 2
 
-    # Stratification should preserve one validation
-    # sample from each class.
+    # Stratification should get one validation sample from each class
     assert np.count_nonzero(y_val == 0) == 1
     assert np.count_nonzero(y_val == 1) == 1
 
@@ -54,27 +53,31 @@ def test_train_test_split():
     # No sample should disappear during the split.
     combined = np.concatenate([X_train, X_val], axis=0)
 
-    assert sorted(map(tuple, combined)) == sorted(map(tuple, X))
+    assert sorted(map(tuple, combined)) == sorted(map(tuple, X))    # Lists of sorted tuples
 
 
 def test_create_optimizer_object():
-    parameter = np.array([1.0, -2.0])
-    gradient = np.zeros_like(parameter)
+    x = np.arange(20).reshape(10, 2)
 
-    parameters = [(parameter, gradient)]
-    regularizable_parameters = [parameter]
+    layers = [ReLU()]
+    model = Sequential(layers=layers)
+    model.build(x.shape)
 
-    optimizer = create_optimizer_object(Adam, parameters, regularizable_parameters, learning_rate=0.001, l2_lambda=1e-4)
-
-    assert isinstance(optimizer, Adam)
-
-    optimizer = create_optimizer_object(SGD, parameters, regularizable_parameters, learning_rate=0.001, l2_lambda=1e-4)
+    optimizer = create_optimizer_object(model, SGD, learning_rate=0.001)
 
     assert isinstance(optimizer, SGD)
 
-    optimizer = create_optimizer_object(SGD_momentum, parameters, regularizable_parameters, learning_rate=0.001, l2_lambda=1e-4)
+    optimizer = create_optimizer_object(model, SGD_momentum, learning_rate=0.001)
 
     assert isinstance(optimizer, SGD_momentum)
+
+    optimizer = create_optimizer_object(model, Adam, learning_rate=0.001)
+
+    assert isinstance(optimizer, Adam)
+
+    optimizer = create_optimizer_object(model, AdamW, learning_rate=0.001, weight_decay=0.001)
+
+    assert isinstance(optimizer, AdamW)
 
 
 def test_batchnorm_backward_gradient():

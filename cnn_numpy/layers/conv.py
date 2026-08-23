@@ -1,5 +1,5 @@
 import numpy as np
-import time
+
 """
 Convolutional Layer Class:
 
@@ -20,10 +20,10 @@ class Conv2D:
         # filter_shape kwarg
         if not isinstance(filter_shape, tuple):
             raise ValueError("Conv: Filter shape must be a tuple")
-        if not isinstance(filter_shape[0], int) or not isinstance(filter_shape[1], int):
-            raise ValueError("Conv: Filter_shape must be a tuple of integers")
         if len(filter_shape) != 2:
             raise ValueError("Conv: filter_shape keyword argument must be a tuple of length 2, for instance: (3,3)")
+        if not isinstance(filter_shape[0], int) or not isinstance(filter_shape[1], int):
+            raise ValueError("Conv: Filter_shape must be a tuple of integers")
         if filter_shape[0] < 1 or filter_shape[1] < 1:
             raise ValueError("Conv: Filter height and width must be 1 or greater")
 
@@ -137,7 +137,8 @@ class Conv2D:
 
 
     def forward(self, input_img: np.ndarray) -> np.ndarray:
-        input_img = np.asarray(input_img, np.float32)
+
+        input_img = np.asarray(input_img, dtype=self.dtype)
 
         if input_img.ndim != 4:
             raise ValueError("Conv: Input image must have shape: (B,H,W,C)")

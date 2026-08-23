@@ -24,6 +24,11 @@ def main():
     learning_rate = get_learning_rate()
     optimizer_class = get_optimizer_class()
 
+    weight_decay = None
+
+    if optimizer_class is AdamW:
+        weight_decay = get_weight_decay()
+
     rng = np.random.default_rng(42)
 
     # Train/Validation split
@@ -72,13 +77,13 @@ def main():
         BatchNorm(epsilon=1e-5, momentum=0.9),
         ReLU(),
 
-        Dropout(drop_prob=0.4, rng=rng),
+        Dropout(drop_prob=0.5, rng=rng),
 
         Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
             ])
 
     model.build(X_train.shape[1:])
-    optimizer = create_optimizer_object(model, optimizer_class, learning_rate)
+    optimizer = create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=weight_decay)
 
     # Early Stopping
     early_stopping = EarlyStopping(patience=7, min_delta=1e-3)
@@ -259,7 +264,7 @@ def get_weight_decay():
     return weight_decay
 
 
-def create_optimizer_object(model, optimizer_class, learning_rate):
+def create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=None):
     parameters_grads = model.parameters_grads()
     if optimizer_class is SGD:
         optimizer = SGD(parameters_grads, learning_rate)
@@ -268,7 +273,6 @@ def create_optimizer_object(model, optimizer_class, learning_rate):
     elif optimizer_class is Adam:
         optimizer = Adam(parameters_grads, learning_rate, b1=0.9, b2=0.999, epsilon=1e-8)
     elif optimizer_class is AdamW:
-        weight_decay = get_weight_decay()
         optimizer = AdamW(parameters_grads, model.decayable_parameters(), learning_rate, b1=0.9, b2=0.999, epsilon=1e-8, weight_decay=weight_decay)
 
     return optimizer
@@ -291,18 +295,17 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
     val_class_indexes = []
 
     for class_label in classes:
-        data_idxs_per_class[class_label] = np.flatnonzero(y == class_label)     # e.g: data_idxs_per_class = {0: array([3, 700, 250, ...]), 1: array([...]), ...} 
+        data_idxs_per_class[class_label] = np.flatnonzero(y == class_label)     # e.g: data_idxs_per_class = {0: array([3, 700, 250, ...]), 1: array([...]), ...}
+        # Shuffle each class's samples, so that we don't take the first 500 (for example) samples of that class in the dataset  
+        # for training and the rest for validation
         rng.shuffle(data_idxs_per_class[class_label])
         class_samples = len(data_idxs_per_class[class_label])
         validation_class_samples = int(np.round(validation_size * class_samples))
         train_class_indexes.append(data_idxs_per_class[class_label][:class_samples - validation_class_samples])
         val_class_indexes.append(data_idxs_per_class[class_label][class_samples - validation_class_samples:])
 
-    train_indexes = np.concatenate(train_class_indexes)
+    train_indexes = np.concatenate(train_class_indexes)     # Concatenate all training class samples
     val_indexes = np.concatenate(val_class_indexes)
-
-    rng.shuffle(train_indexes)
-    rng.shuffle(val_indexes)
 
     X_train = X[train_indexes]
     X_val = X[val_indexes]
@@ -344,9 +347,9 @@ def train_epoch(model, X_train, y_train, optimizer, rng):
 
     loss = SoftmaxCrossEntropyLoss()
 
-    train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng, shuffle=True)    # [(X_batch_0, y_batch_0), (X_batch_1, y_batch_1), ...]
+    train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng, shuffle=True)    # generator object
     
-    for X_train_batch, y_train_batch in train_batches:
+    for X_train_batch, y_train_batch in train_batches:  # Extract tuple (X_train_batch_0, y_train_batch_0), ... from generator
         # ----- Forward -----
 
         batched_logits_train = model.forward(X_train_batch)
