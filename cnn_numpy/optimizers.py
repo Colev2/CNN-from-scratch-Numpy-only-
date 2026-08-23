@@ -110,7 +110,7 @@ class AdamW:
         self.t += 1  
 
         for parameter, gradient in self.parameters_grads:
-            if id(parameter) not in self.state:
+            if id(parameter) not in self.state:     # https://docs.python.org/3/library/functions.html#id
                 self.state[id(parameter)] = {"m": np.zeros_like(parameter), "u": np.zeros_like(parameter)}
             m = self.b1 * self.state[id(parameter)]["m"] + (1 - self.b1) * gradient
             u = self.b2 * self.state[id(parameter)]["u"] + (1 - self.b2) * (gradient ** 2)

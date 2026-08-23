@@ -35,7 +35,7 @@ def main():
     X_train, y_train, X_val, y_val = train_test_split(train_data, labels, validation_size=0.1, rng=rng)
 
     # In-place standardization of the dataset (new data mean=0, new data std=1)
-    mean = np.mean(X_train, axis=(0,1,2), dtype=np.float64, keepdims=True)
+    mean = np.mean(X_train, axis=(0,1,2), dtype=np.float64, keepdims=True)   # https://numpy.org/doc/stable/reference/generated/numpy.mean.html
     std = np.std(X_train, axis=(0,1,2), dtype=np.float64, keepdims=True)
 
     # Train set standardization (m=0, σ=1)
@@ -52,32 +52,31 @@ def main():
 
     model = Sequential([
         Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
+        BatchNorm(epsilon=1e-5, momentum=0.99),
         ReLU(),
 
         Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
+        BatchNorm(epsilon=1e-5, momentum=0.99),
         ReLU(),
 
         MaxPooling2D(pool_size=(2,2), stride=2),
 
         Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
+        BatchNorm(epsilon=1e-5, momentum=0.99),
         ReLU(),
 
         Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
+        BatchNorm(epsilon=1e-5, momentum=0.99),
         ReLU(),
 
         MaxPooling2D(pool_size=(2,2), stride=2),
 
         Flatten(),
-
-        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
-
         Dropout(drop_prob=0.5, rng=rng),
+        
+        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
+        BatchNorm(epsilon=1e-5, momentum=0.99),
+        ReLU(),
 
         Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
             ])
@@ -289,12 +288,13 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
         rng = np.random.default_rng()
 
     # Stratification: Get same percentage of images from each class on split set
-    classes = np.unique(y)
+    classes = np.unique(y)  # https://numpy.org/doc/stable/reference/generated/numpy.unique.html
     data_idxs_per_class = {}
     train_class_indexes = []
     val_class_indexes = []
 
     for class_label in classes:
+        # flatnonzero(): https://numpy.org/doc/stable/reference/generated/numpy.flatnonzero.html
         data_idxs_per_class[class_label] = np.flatnonzero(y == class_label)     # e.g: data_idxs_per_class = {0: array([3, 700, 250, ...]), 1: array([...]), ...}
         # Shuffle each class's samples, so that we don't take the first 500 (for example) samples of that class in the dataset  
         # for training and the rest for validation
@@ -305,7 +305,7 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
         val_class_indexes.append(data_idxs_per_class[class_label][class_samples - validation_class_samples:])
 
     train_indexes = np.concatenate(train_class_indexes)     # Concatenate all training class samples
-    val_indexes = np.concatenate(val_class_indexes)
+    val_indexes = np.concatenate(val_class_indexes)     # https://numpy.org/doc/stable/reference/generated/numpy.concatenate.html
 
     X_train = X[train_indexes]
     X_val = X[val_indexes]
@@ -372,7 +372,7 @@ def train_epoch(model, X_train, y_train, optimizer, rng):
         # ----- Accuracy -----
 
         predicted_class_idx = np.argmax(batched_logits_train, axis=1)
-        correct_predictions_train += np.count_nonzero(predicted_class_idx == y_train_batch)
+        correct_predictions_train += np.count_nonzero(predicted_class_idx == y_train_batch)  # https://numpy.org/doc/stable/reference/generated/numpy.count_nonzero.html
 
     train_accuracy = (correct_predictions_train / len(y_train)) * 100
 

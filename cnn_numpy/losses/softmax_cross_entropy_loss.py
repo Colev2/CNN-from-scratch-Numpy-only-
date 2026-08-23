@@ -54,7 +54,7 @@ class SoftmaxCrossEntropyLoss:
     def backward(self) -> np.ndarray:
         if self.probabilities is None:
             raise ValueError("Cross Entropy: probabilities attribute wasn't initialized. Forward method needs to be called")
-        
+        # https://numpy.org/doc/stable/reference/generated/numpy.empty.html
         din = np.empty(self.input_shape, dtype=self.dtype)
 
         batch_indexes = np.arange(self.batch_size)

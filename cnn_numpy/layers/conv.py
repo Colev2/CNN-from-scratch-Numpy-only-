@@ -83,6 +83,7 @@ class Conv2D:
         if self.initialization == "he":
             if self.distribution == "normal":
                 std = (2 / fan_in) ** 0.5
+                # https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.normal.html#numpy.random.Generator.normal
                 self.weights = self.rng.normal(loc=0, scale=std, size=(self.filters, Kh, Kw, self.in_channels))   # (F,Kh,Kw,Ch)
                 self.weights = np.asarray(self.weights, dtype=self.dtype)
             elif self.distribution == "uniform":
@@ -104,7 +105,7 @@ class Conv2D:
         self.bias = np.zeros((self.filters), dtype=self.dtype)
 
         # Gradients
-        self.dweights = np.zeros_like(self.weights)
+        self.dweights = np.zeros_like(self.weights)     # https://numpy.org/doc/stable/reference/generated/numpy.zeros_like.html
         self.dbias = np.zeros_like(self.bias)
 
 
@@ -137,7 +138,7 @@ class Conv2D:
 
 
     def forward(self, input_img: np.ndarray) -> np.ndarray:
-
+        # https://numpy.org/doc/stable/reference/generated/numpy.asarray.html
         input_img = np.asarray(input_img, dtype=self.dtype)
 
         if input_img.ndim != 4:
@@ -213,7 +214,8 @@ class Conv2D:
 
         # dL/dw
         # Get the B*Hout*Wout input windows used during the convolution.
-        # Each window contains Kh*Kw*C elements.
+        # Each window contains Kh*Kw*C elements
+        # https://numpy.org/doc/stable/reference/generated/numpy.lib.stride_tricks.sliding_window_view.html
         windows = np.lib.stride_tricks.sliding_window_view(self.padded_input, axis=(1,2), window_shape=(Kh,Kw))    
         windows = windows[:, ::self.stride, ::self.stride, :]   # Get windows with stride=stride. Shape: (B,Hout,Wout,C,Kh,Kw) -> B*Hout*Wout*C number of windows
         windows = windows.transpose(0, 1, 2, 4, 5, 3) # (B,Hout,Wout,Kh,Kw,C)
@@ -287,23 +289,27 @@ class Conv2D:
 
     def get_weights(self):
 
-        return [self.weights.copy(), self.bias.copy()]
+        return [self.weights.copy(), self.bias.copy()]    # https://numpy.org/doc/stable/reference/generated/numpy.ndarray.copy.html
 
 
     def set_weights(self, weights: list):
+        
         self.weights[...] = weights[0]
         self.bias[...] = weights[1]
 
 
     def train(self):
+
         self.training = True
 
 
     def eval(self):
+
         self.training = False
 
 
     def decayable_parameters(self):
+
         return [self.weights]
 
 

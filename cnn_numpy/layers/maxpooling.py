@@ -73,6 +73,8 @@ class MaxPooling2D:
         output = np.max(pooling_windows, axis=(4,5))    # (Β,Hout,Wout,Ch)
 
         reshaped_windows = np.reshape(pooling_windows, shape=(batch_size,self.output_height,self.output_width,channels,-1))    # (B,Hout,Wout,Ch,Ph*Pw)
+
+        # https://numpy.org/doc/stable/reference/generated/numpy.argmax.html
         self.max_element_idxs = np.argmax(reshaped_windows, axis=4)     # (B,Hout,Wout,Ch)
 
         return output
@@ -116,16 +118,20 @@ class MaxPooling2D:
 
 
     def set_weights(self, weights):
+
         pass
 
 
     def train(self):
+
         self.training = True
 
 
     def eval(self):
+
         self.training = False
 
 
     def decayable_parameters(self):
+
         return []

@@ -44,15 +44,15 @@ def test_train_test_split():
     assert len(X_val) == 2
 
     # Stratification should get one validation sample from each class
-    assert np.count_nonzero(y_val == 0) == 1
+    assert np.count_nonzero(y_val == 0) == 1    # https://numpy.org/doc/stable/reference/generated/numpy.count_nonzero.html
     assert np.count_nonzero(y_val == 1) == 1
 
     assert np.count_nonzero(y_train == 0) == 4
     assert np.count_nonzero(y_train == 1) == 4
 
-    # No sample should disappear during the split.
+    # No sample should disappear during the split
     combined = np.concatenate([X_train, X_val], axis=0)
-
+    # https://docs.python.org/3/library/functions.html#map, https://docs.python.org/3/library/functions.html#sorted
     assert sorted(map(tuple, combined)) == sorted(map(tuple, X))    # Lists of sorted tuples
 
 
@@ -61,7 +61,7 @@ def test_create_optimizer_object():
 
     layers = [ReLU()]
     model = Sequential(layers=layers)
-    model.build(x.shape)
+    model.build((x.shape[1],))
 
     optimizer = create_optimizer_object(model, SGD, learning_rate=0.001)
 
@@ -81,9 +81,10 @@ def test_create_optimizer_object():
 
 
 def test_batchnorm_backward_gradient():
+    # https://numpy.org/doc/stable/reference/random/generator.html#numpy.random.default_rng
     rng = np.random.default_rng(42)
 
-    # Small Dense-like BatchNorm input
+    # https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.normal.html#numpy.random.Generator.normal
     x = rng.normal(size=(4, 3)).astype(np.float64)
     dout = rng.normal(size=(4, 3)).astype(np.float64)
 
@@ -107,31 +108,30 @@ def test_batchnorm_backward_gradient():
     epsilon = 1e-5
 
     def scalar_loss():
+        # If: L = Σ_i output_i * dout_i then, dL/doutput = dout. Choosing this loss function, the random created dout 
+        # is exactly the gradient of that loss with respect to the layer's output
         output = bn.forward(x)
 
-        # If dout = dL/doutput, then using
-        #
-        # L = sum(output * dout)
-        #
-        # gives exactly that upstream gradient.
         return np.sum(output * dout)
 
     # ----- dx -----
 
     numerical_dx = np.zeros_like(x)
 
+    # Documentation for np.ndindex(): https://numpy.org/doc/stable/reference/generated/numpy.ndindex.html
     for index in np.ndindex(x.shape):
         original_value = x[index]
 
         x[index] = original_value + epsilon
-        loss_plus = scalar_loss()
+        loss_plus = scalar_loss()   # loss(x_0 + ε), where x_0 + ε is input x, with only x[index] increased by ε
 
         x[index] = original_value - epsilon
-        loss_minus = scalar_loss()
+        loss_minus = scalar_loss()  # loss(x_0 - ε), where x_0 - ε is input x, with only x[index] decreased by ε
 
         x[index] = original_value
 
-        numerical_dx[index] = (loss_plus - loss_minus) / (2 * epsilon)
+        # dL/dx_0 = (loss(x_0 + ε) - loss(x_0 - ε)) / 2ε
+        numerical_dx[index] = (loss_plus - loss_minus) / (2 * epsilon)  
 
     # ----- dgamma -----
 
@@ -167,6 +167,8 @@ def test_batchnorm_backward_gradient():
 
         numerical_dbeta[i] = (loss_plus - loss_minus) / (2 * epsilon)
 
+    # Check if |dx - numerical_dx| <= atol + rtol * |numerical_dx|
+    # https://numpy.org/doc/stable/reference/generated/numpy.testing.assert_allclose.html
     np.testing.assert_allclose(dx, numerical_dx, rtol=1e-5, atol=1e-6)
 
     np.testing.assert_allclose(dgamma, numerical_dgamma, rtol=1e-5, atol=1e-6)
@@ -180,7 +182,7 @@ def test_dense_backward_gradient():
 
     x = rng.normal(size=(3, 4)).astype(np.float64)
 
-    dense = Dense(neurons=2, rng=rng, initialization="xavier", distribution="normal", dtype=np.float64)
+    dense = Dense(neurons=2, rng=rng, initialization="xavier", distribution="normal", dtype=np.float64)  # Float64 -> More accurate numerical testing
 
     dense.build((4,))
 
