@@ -1,7 +1,7 @@
 import numpy as np
 
 class MaxPooling2D:
-    def __init__(self, pool_size=(2,2), stride=2):
+    def __init__(self, pool_size=(2,2), stride=2, dtype=np.float32):
         if pool_size[0] < 1 or pool_size[1] < 1:
             raise ValueError("MaxPooling: Pooling window must contain at least 1 element")
 
@@ -15,7 +15,7 @@ class MaxPooling2D:
         self.max_element_idxs = None
         self.built = False
         self.training = True
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def build(self, input_shape):
@@ -105,7 +105,7 @@ class MaxPooling2D:
         return din
 
 
-    def parameters(self):
+    def parameters_grads(self):
 
         return []
 
@@ -127,5 +127,5 @@ class MaxPooling2D:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return []

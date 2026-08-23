@@ -1,8 +1,4 @@
 import numpy as np
-from cnn_numpy.layers.conv import Conv_layer
-from cnn_numpy.layers.relu import ReLU_layer
-from cnn_numpy.layers.flatten import Flatten_layer
-from cnn_numpy.layers.dense import Dense_layer
 
 class Sequential:
     def __init__(self, layers: list):
@@ -45,15 +41,15 @@ class Sequential:
         return dout   
     
 
-    def parameters(self):
+    def parameters_grads(self):
         if not self.built:
             raise RuntimeError("Sequential: Model needs to be built")
         
-        params = []
+        parameters_grads = []
         for layer in self.layers:
-            params.extend(layer.parameters())
+            parameters_grads.extend(layer.parameters_grads())
 
-        return params
+        return parameters_grads
 
 
     def get_weights(self):
@@ -89,21 +85,14 @@ class Sequential:
             layer.eval()
 
 
-    def regularizable_parameters(self):
-        params = []
+    def decayable_parameters(self):
+        decayable_params = []
 
         for layer in self.layers:
-            params.extend(layer.regularizable_parameters())
+            decayable_params.extend(layer.decayable_parameters())
 
-        return params
+        return decayable_params
 
 
-    def l2_loss(self, l2_lambda):
-        loss = 0
-
-        for w in self.regularizable_parameters():
-            loss += np.sum(w ** 2)
-
-        return l2_lambda * loss
 
 

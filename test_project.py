@@ -81,10 +81,10 @@ def test_batchnorm_backward_gradient():
     rng = np.random.default_rng(42)
 
     # Small Dense-like BatchNorm input
-    x = rng.normal(size=(4, 3))
-    dout = rng.normal(size=(4, 3))
+    x = rng.normal(size=(4, 3)).astype(np.float64)
+    dout = rng.normal(size=(4, 3)).astype(np.float64)
 
-    bn = BatchNorm(epsilon=1e-5, momentum=0.9)
+    bn = BatchNorm(epsilon=1e-5, momentum=0.9, dtype=np.float64)
 
     bn.build((3,))
 
@@ -177,7 +177,7 @@ def test_dense_backward_gradient():
 
     x = rng.normal(size=(3, 4)).astype(np.float64)
 
-    dense = Dense(neurons=2, rng=rng, initialization="xavier", distribution="normal")
+    dense = Dense(neurons=2, rng=rng, initialization="xavier", distribution="normal", dtype=np.float64)
 
     dense.build((4,))
 
@@ -261,7 +261,7 @@ def test_conv_backward_gradient():
 
     x = rng.normal(size=(1, 3, 3, 1)).astype(np.float64)
 
-    conv = Conv2D(filters=2, filter_shape=(2, 2), padding=0, stride=1, rng=rng, initialization="xavier", distribution="normal")
+    conv = Conv2D(filters=2, filter_shape=(2, 2), padding=0, stride=1, rng=rng, initialization="xavier", distribution="normal", dtype=np.float64)
 
     conv.build((3, 3, 1))
 

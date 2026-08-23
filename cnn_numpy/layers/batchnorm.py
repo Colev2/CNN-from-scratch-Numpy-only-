@@ -1,7 +1,7 @@
 import numpy as np
 
 class BatchNorm:
-    def __init__(self, epsilon, momentum):
+    def __init__(self, epsilon, momentum, dtype=np.float32):
         if epsilon <= 0:
             raise ValueError("BatchNorm: Epsilon argument must be greater than 0")
         if not 0 <= momentum < 1:
@@ -9,7 +9,7 @@ class BatchNorm:
         
         self.epsilon = epsilon
         self.momentum = momentum
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
         self.built = False
         self.training = True
@@ -107,10 +107,10 @@ class BatchNorm:
         return dL_dx
     
 
-    def parameters(self):
-        parameters = [(self.gamma, self.dgamma), (self.beta, self.dbeta)]
+    def parameters_grads(self):
+        parameters_grads = [(self.gamma, self.dgamma), (self.beta, self.dbeta)]
 
-        return parameters
+        return parameters_grads
 
 
     def get_weights(self):
@@ -133,7 +133,7 @@ class BatchNorm:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return []
 
 

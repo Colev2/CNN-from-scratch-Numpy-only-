@@ -10,7 +10,7 @@ filter_shape: Tuple, indicating the shape of the filters in the convolutional la
 input_img: Tuple, indicating the shape of the input image on the convolutional layer. For example, (256,256,3) means a 256x256x3 image.
 """
 class Conv2D:
-    def __init__(self, filters=1, filter_shape=(3,3), padding=1, stride=1, rng=None, initialization="he", distribution="normal"):
+    def __init__(self, filters=1, filter_shape=(3,3), padding=1, stride=1, rng=None, initialization="he", distribution="normal", dtype=np.float32):
         # filters kwarg
         if not isinstance(filters, int):
             raise ValueError("Conv: Number of Filters must be integer")
@@ -69,7 +69,7 @@ class Conv2D:
         self.training = True
 
         self.weights = None
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def _initialize_parameters(self):
@@ -204,27 +204,73 @@ class Conv2D:
         Kh = self.filter_shape[0]
         Kw = self.filter_shape[1] 
 
-        flat_dout = np.reshape(dout, shape=(batch_size * Hout * Wout, -1)) # (B*Hout*Wout,F)
-        windows = np.lib.stride_tricks.sliding_window_view(self.padded_input, axis=(1,2), window_shape=(Kh,Kw))     
-        windows = windows[:, ::self.stride, ::self.stride, :]   # (B,Hout,Wout,C,Kh,Kw)
-        windows = windows.transpose(0, 1, 2, 4, 5, 3) # (B,Hout,Wout,Kh,Kw,C)
-        flat_windows = np.reshape(windows, shape=(batch_size * windows.shape[1] * windows.shape[2], Kh * Kw * self.in_channels))  # (B*Hout*Wout, Kh*Kw*C)
-
         # dL/db
         self.dbias[...] = np.sum(dout, axis=(0,1,2))  # (F,)
 
+        # Contains as many rows as the number of input windows of size (Kh,Kw,C) and stride=stride
+        flat_dout = np.reshape(dout, shape=(batch_size * Hout * Wout, -1)) # (B*Hout*Wout,F)
+
         # dL/dw
+        # Get the B*Hout*Wout input windows used during the convolution.
+        # Each window contains Kh*Kw*C elements.
+        windows = np.lib.stride_tricks.sliding_window_view(self.padded_input, axis=(1,2), window_shape=(Kh,Kw))    
+        windows = windows[:, ::self.stride, ::self.stride, :]   # Get windows with stride=stride. Shape: (B,Hout,Wout,C,Kh,Kw) -> B*Hout*Wout*C number of windows
+        windows = windows.transpose(0, 1, 2, 4, 5, 3) # (B,Hout,Wout,Kh,Kw,C)
+
+        # Widnow 0 -> All elements: [0, 1, 2, ..., Kh*Kw*C], window 1 -> All elements, window 2 ....
+        flat_windows = np.reshape(windows, shape=(batch_size * windows.shape[1] * windows.shape[2], Kh * Kw * self.in_channels))  # (B*Hout*Wout, Kh*Kw*C)
+
+        
+        # Row f of flat_dout.T contains dL/dz for filter f. Each element of that row is the dout that corresponds to the window at b,h,w 
+        # Column kh*kw*c of flat_windows contains the kh*kw*c -th element of each input window
+        # For a specific weight w[f,kh,kw,c]:
+        # dL/dw[f,kh,kw,c] = Σ_(b,h,w) dout[b,h,w,f] * windows[b,h,w,kh,kw,c]
+        # The sum appears because the same weight is multiplied with every input pixel that it "sits on" during convolution, 
+        # so its gradient receives one contribution from every output z that depends on it.
+        # For example, the gradient of weight w[f=0, kh=0, kw=0, c=0] is:
+        # Σ_(b,h,w) dout[b,h,w,0] * windows[b,h,w,0,0,0]
+        # because that same weight of filter 0 is multiplied with every input pixel at kh=0,kw=0,c=0 of each window during convolution
         dL_dw_flat = flat_dout.T @ flat_windows    # (F,Kh*Kw*C)
         self.dweights[...] = np.reshape(dL_dw_flat, shape=(-1, Kh, Kw, self.in_channels))  # (F,Kh,Kw,C)
 
         # dL/dx
+        # We first compute the gradient with respect to every element of every
+        # convolution window. This is not yet dL/dx, because the same input pixel
+        # may appear in multiple overlapping windows.
         dL_dx_padded = np.zeros_like(self.padded_input)
-        flat_weights = np.reshape(self.weights, shape=(self.filters, -1))   # (F,Kh*Kw*C)
-        dwindows_flat = flat_dout @ flat_weights # (B*Hout*Wout,F) @ (F,Kh*Kw*C) -> (B*Hout*Wout,Khw*Kw*C)
-        dwindows = np.reshape(dwindows_flat, shape=(batch_size, Hout, Wout, Kh, Kw, self.in_channels))
 
+        # Each row contains all Kh*Kw*C weights of one filter.
+        flat_weights = np.reshape(self.weights, shape=(self.filters, -1))   # (F,Kh*Kw*C)
+
+        # For one specific window p and one specific element q=(kh,kw,c) inside it:
+        # dL/dwindow[p,q] = Σ_f dL/dz[p,f] * w[f,q]
+        # The sum over filters appears because the same input element inside this window contributes to the output 
+        # of every filter at this spatial position. Therefore each row gives the gradients of all Kh*Kw*C elements of one convolution window.
+        dwindows_flat = flat_dout @ flat_weights # (B*Hout*Wout,F) @ (F,Kh*Kw*C) -> (B*Hout*Wout,Khw*Kw*C)
+        dwindows = np.reshape(dwindows_flat, shape=(batch_size, Hout, Wout, Kh, Kw, self.in_channels))  # (Β,Hout,Wout,Kh,Kw,C)
+
+
+        # dwindows[:, :, :, kr, kc, :] has shape (B, Hout, Wout, C).
+        # It contains the gradients of the window elements that are located at kernel position (kr, kc), for every possible convolution window.
+        # The slice dL_dx_padded[:, kr:kr + Hout * self.stride:self.stride, kc:kc + Wout * self.stride:self.stride, :]
+        # selects all padded-input positions that correspond to the (kr, kc) element of every convolution window, all at once.
+        # It is basically the mapping from window coordinates (h, w, kr, kc) to input-pixel coordinates:
+        # input_row = h * stride + kr
+        # input_col = w * stride + kc
+        # Operand += occurs because different window positions can refer to the same input element. For example, with stride=1:
+        # window (h=0, w=0), element (kr=0, kc=1) and window (h=0, w=1), element (kr=0, kc=0) both refer to the same input pixel,
+        # so their gradient contributions must be added together. Its the vectorized edition of:
+        # for kr in range(Kh):
+        #     for kc in range(Kw):
+        #         for h in range(Hout):
+        #             for w in range(Wout):
+        #                 input_row = h * stride + kr
+        #                 input_col = w * stride + kc
+        #                 dL_dx_padded[:, input_row, input_col, :] += dwindows[:, h, w, kr, kc, :]
         for kr in range(Kh):
             for kc in range(Kw):
+                # kr,kc positions of every window: [kr, kr + stride, kr + 2*stride, kr + 3*stride,...]
+                # (B, Hout, Wout, C)
                 dL_dx_padded[:, kr:kr + Hout * self.stride:self.stride, kc:kc + Wout * self.stride:self.stride, :] += dwindows[:, :, :, kr, kc, :]
 
         din = dL_dx_padded[:, self.padding:self.padded_input.shape[1] - self.padding, self.padding:self.padded_input.shape[2] - self.padding, :]  # (B,H,W,C)
@@ -232,10 +278,10 @@ class Conv2D:
         return din
 
 
-    def parameters(self):
-        parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
+    def parameters_grads(self):
+        parameters_grads = [(self.weights, self.dweights), (self.bias, self.dbias)]
 
-        return parameters
+        return parameters_grads
 
 
     def get_weights(self):
@@ -256,7 +302,7 @@ class Conv2D:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return [self.weights]
 
 

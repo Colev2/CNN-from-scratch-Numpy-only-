@@ -1,7 +1,7 @@
 import numpy as np
 
 class Dense:
-    def __init__(self, neurons=1, rng=None, initialization="he", distribution="normal"):
+    def __init__(self, neurons=1, rng=None, initialization="he", distribution="normal", dtype=np.float32):
         if neurons < 1:
             raise ValueError("Dense: Neurons must be 1 or more")
         
@@ -27,7 +27,7 @@ class Dense:
         self.weights = None
         self.built = False
         self.training = True
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def _initialize_parameters(self):
@@ -122,10 +122,10 @@ class Dense:
         return din
 
     # Weights + Gradients
-    def parameters(self):
-        parameters = [(self.weights, self.dweights), (self.bias, self.dbias)]
+    def parameters_grads(self):
+        parameters_grads = [(self.weights, self.dweights), (self.bias, self.dbias)]
 
-        return parameters
+        return parameters_grads
 
 
     def get_weights(self):
@@ -146,5 +146,5 @@ class Dense:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return [self.weights]

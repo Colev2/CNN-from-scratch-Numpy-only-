@@ -7,9 +7,10 @@ from cnn_numpy.layers.dense import Dense
 from cnn_numpy.layers.dropout import Dropout
 from cnn_numpy.losses.softmax_cross_entropy_loss import SoftmaxCrossEntropyLoss
 from cnn_numpy.layers.batchnorm import BatchNorm
-from cnn_numpy.optimizers import SGD, SGD_momentum, Adam
+from cnn_numpy.optimizers import SGD, SGD_momentum, Adam, AdamW
 from cnn_numpy.sequential import Sequential
 from cnn_numpy.early_stopping import EarlyStopping
+from cnn_numpy.lr_scheduler import ReduceLROnPlateau
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 from pathlib import Path
 
@@ -22,7 +23,6 @@ def main():
     distribution = get_distribution()
     learning_rate = get_learning_rate()
     optimizer_class = get_optimizer_class()
-    weight_decay = get_l2_lambda()
 
     rng = np.random.default_rng(42)
 
@@ -78,30 +78,36 @@ def main():
             ])
 
     model.build(X_train.shape[1:])
-    optimizer = create_optimizer_object(optimizer_class, model.parameters(), model.regularizable_parameters(), learning_rate, l2_lambda=weight_decay)
+    optimizer = create_optimizer_object(model, optimizer_class, learning_rate)
 
     # Early Stopping
-    early_stopping = EarlyStopping(patience=3, min_delta=1e-3)
+    early_stopping = EarlyStopping(patience=7, min_delta=1e-3)
+
+    # Learning Rate Scheduler
+    lr_scheduler = ReduceLROnPlateau(optimizer=optimizer, factor=0.5, patience=3, min_delta=1e-3, min_lr=1e-5)
 
     # Training
     for epoch in range(epochs):
-        train_loss, train_l2_loss, train_total_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng)
+        print(f"Training epoch {epoch + 1}...")
+        train_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng)
 
         val_loss, val_accuracy = evaluate(model, X_val, y_val)
 
         print(
             f"Epoch {epoch + 1}: "
-            f"train_acc = {train_accuracy:.2f}% | "
-            f"train_data_loss = {train_loss:.3f}, "
-            f"train_l2_loss = {train_l2_loss:.3f}, "
-            f"train_total_loss = {train_total_loss:.3f} | "
-            f"val_acc = {val_accuracy:.2f}%, "
-            f"val_loss = {val_loss:.3f}"
+            f"train_acc: {train_accuracy:.4f}% , "
+            f"train_loss: {train_loss:.4f} | "
+            f"val_acc: {val_accuracy:.4f}% , "
+            f"val_loss: {val_loss:.4f} | "
+            f"learning_rate: {optimizer.learning_rate:.4f}"
             )
 
-        stop = early_stopping.step(model, val_loss=val_loss, epoch=epoch)
+        stop = early_stopping.step(model=model, val_loss=val_loss, epoch=epoch)
         if stop:
             break
+
+        lr_scheduler.step(val_loss=val_loss)
+
 
     # Restore best weights
     early_stopping.restore_best_weights(model)
@@ -149,8 +155,8 @@ def get_dataset_class():
 
 
 def load_dataset(dataset_class: type):
-    DATA_ROOT = Path(__file__).resolve().parent / "data"
-    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    DATA_ROOT = Path(__file__).resolve().parent / "data"    # Path to the data subfolder next to this file
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)    # Create the folder if it doesn't exist
     
     data_obj = dataset_class(root=str(DATA_ROOT), train=True, download=True)
 
@@ -217,7 +223,8 @@ def get_optimizer_class():
     optimizer_choice = input("Choose optimizer:\n" 
         "1) SGD\n" 
         "2) SGD_momentum\n" 
-        "3) Adam\n").strip().lower()
+        "3) Adam\n" 
+        "4) AdamW\n").strip().lower()
     
     optimizers = {
             "1": SGD,
@@ -227,7 +234,10 @@ def get_optimizer_class():
             "sgd_momentum": SGD_momentum,
     
             "3": Adam,
-            "adam": Adam
+            "adam": Adam,
+
+            "4": AdamW,
+            "adamw": AdamW
         }
     
     try:
@@ -238,26 +248,30 @@ def get_optimizer_class():
     return optimizer_class
 
 
-def create_optimizer_object(optimizer_class, parameters, regularizable_parameters, learning_rate, l2_lambda):
-    if optimizer_class == SGD:
-        optimizer = SGD(parameters, regularizable_parameters, learning_rate, l2_lambda=l2_lambda)
-    elif optimizer_class == SGD_momentum:
-        optimizer = SGD_momentum(parameters, regularizable_parameters, learning_rate, momentum_coeff=0.9, l2_lambda=l2_lambda)
-    elif optimizer_class == Adam:
-        optimizer = Adam(parameters, regularizable_parameters, learning_rate, b1=0.9, b2=0.999, epsilon=1e-8, l2_lambda=l2_lambda)
-
-    return optimizer
-
-
-def get_l2_lambda():
+def get_weight_decay():
     try:
-        l2_lambda = float(input("Give L2 regularization's lambda: "))
-        if l2_lambda < 0 :
+        weight_decay = float(input("Give weight decay: "))
+        if weight_decay < 0 :
             raise ValueError
     except ValueError:
-        raise ValueError("Lambda must be a non-negative float")
+        raise ValueError("Weight decay must be a non-negative float")
 
-    return l2_lambda
+    return weight_decay
+
+
+def create_optimizer_object(model, optimizer_class, learning_rate):
+    parameters_grads = model.parameters_grads()
+    if optimizer_class is SGD:
+        optimizer = SGD(parameters_grads, learning_rate)
+    elif optimizer_class is SGD_momentum:
+        optimizer = SGD_momentum(parameters_grads, learning_rate, momentum_coeff=0.9)
+    elif optimizer_class is Adam:
+        optimizer = Adam(parameters_grads, learning_rate, b1=0.9, b2=0.999, epsilon=1e-8)
+    elif optimizer_class is AdamW:
+        weight_decay = get_weight_decay()
+        optimizer = AdamW(parameters_grads, model.decayable_parameters(), learning_rate, b1=0.9, b2=0.999, epsilon=1e-8, weight_decay=weight_decay)
+
+    return optimizer
 
 
 def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -270,7 +284,7 @@ def train_test_split(X, y, validation_size: float, rng=None) -> tuple[np.ndarray
     if rng is None:
         rng = np.random.default_rng()
 
-    # Stratification:
+    # Stratification: Get same percentage of images from each class on split set
     classes = np.unique(y)
     data_idxs_per_class = {}
     train_class_indexes = []
@@ -360,10 +374,8 @@ def train_epoch(model, X_train, y_train, optimizer, rng):
     train_accuracy = (correct_predictions_train / len(y_train)) * 100
 
     train_loss = sample_loss_sum_train / len(y_train)
-    train_l2_loss = model.l2_loss(optimizer.l2_lambda)
-    train_total_loss = train_loss + train_l2_loss
 
-    return train_loss, train_l2_loss, train_total_loss, train_accuracy
+    return train_loss, train_accuracy
 
 
 def evaluate(model, X, y):

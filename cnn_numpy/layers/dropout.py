@@ -1,7 +1,7 @@
 import numpy as np
 
 class Dropout:
-    def __init__(self, drop_prob=0.2, rng=None):
+    def __init__(self, drop_prob=0.2, rng=None, dtype=np.float32):
         if not 0 <= drop_prob <= 1:
             raise ValueError("Dropout: Keep probability must be between 0 (exclusive) and 1 (inclusive)")
         
@@ -14,7 +14,7 @@ class Dropout:
         self.built = False
         self.training = True
         self.mask = None
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def build(self, input_shape):
@@ -53,7 +53,7 @@ class Dropout:
             return din
 
 
-    def parameters(self):
+    def parameters_grads(self):
 
         return []
 
@@ -75,7 +75,7 @@ class Dropout:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return []
 
 

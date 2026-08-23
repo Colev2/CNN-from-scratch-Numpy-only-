@@ -1,9 +1,9 @@
 import numpy as np
 
 class SoftmaxCrossEntropyLoss:
-    def __init__(self):
+    def __init__(self, dtype=np.float32):
         self.probabilities = None
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def forward(self, input: np.ndarray, labels: np.ndarray) -> float:

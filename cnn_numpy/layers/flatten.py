@@ -1,12 +1,12 @@
 import numpy as np
 
 class Flatten:
-    def __init__(self):
+    def __init__(self, dtype=np.float32):
         self.input_shape = None
         self.output_shape = None
         self.built = False
         self.training = True
-        self.dtype = np.float32
+        self.dtype = np.dtype(dtype)
 
 
     def build(self, input_shape):
@@ -56,7 +56,7 @@ class Flatten:
         return din
 
 
-    def parameters(self):
+    def parameters_grads(self):
 
         return []
 
@@ -78,6 +78,6 @@ class Flatten:
         self.training = False
 
 
-    def regularizable_parameters(self):
+    def decayable_parameters(self):
         return []
         
