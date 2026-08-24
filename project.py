@@ -11,6 +11,7 @@ from cnn_numpy.optimizers import SGD, SGD_momentum, Adam, AdamW
 from cnn_numpy.sequential import Sequential
 from cnn_numpy.early_stopping import EarlyStopping
 from cnn_numpy.lr_scheduler import ReduceLROnPlateau
+from cnn_numpy.data_augmentation import random_horizontal_flip, random_crop, augment_batch
 from torchvision.datasets import MNIST, FashionMNIST, CIFAR10, CIFAR100
 from pathlib import Path
 
@@ -28,6 +29,8 @@ def main():
 
     if optimizer_class is AdamW:
         weight_decay = get_weight_decay()
+
+    use_data_augm = get_data_augmentation()
 
     rng = np.random.default_rng(42)
 
@@ -52,21 +55,21 @@ def main():
 
     model = Sequential([
         Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
         ReLU(),
 
         Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
         ReLU(),
 
         MaxPooling2D(pool_size=(2,2), stride=2),
 
         Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
         ReLU(),
 
         Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
         ReLU(),
 
         MaxPooling2D(pool_size=(2,2), stride=2),
@@ -75,11 +78,11 @@ def main():
         Dropout(drop_prob=0.5, rng=rng),
         
         Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
         ReLU(),
 
         Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
-            ])
+        ])
 
     model.build(X_train.shape[1:])
     optimizer = create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=weight_decay)
@@ -90,10 +93,17 @@ def main():
     # Learning Rate Scheduler
     lr_scheduler = ReduceLROnPlateau(optimizer=optimizer, factor=0.5, patience=3, min_delta=1e-3, min_lr=1e-5)
 
+    # Data augmentation configuration (crop, horizontal flip)
+    crop_padding = None
+    horizontal_flip = None
+
+    if use_data_augm:
+        crop_padding, horizontal_flip = get_augmentation_config(dataset_class)
+
     # Training
     for epoch in range(epochs):
         print(f"Training epoch {epoch + 1}...")
-        train_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng)
+        train_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng, use_data_augm, crop_padding, horizontal_flip)
 
         val_loss, val_accuracy = evaluate(model, X_val, y_val)
 
@@ -263,6 +273,18 @@ def get_weight_decay():
     return weight_decay
 
 
+def get_data_augmentation():
+    augmentation_choice = input("Use data augmentation? (yes/no): ").strip().lower()
+
+    if augmentation_choice in ("yes", "y"):
+        return True
+
+    if augmentation_choice in ("no", "n"):
+        return False
+
+    raise ValueError("Data augmentation choice must be yes or no")
+
+
 def create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=None):
     parameters_grads = model.parameters_grads()
     if optimizer_class is SGD:
@@ -339,7 +361,20 @@ def create_batches(X, y, batch_size, rng=None, shuffle=False):
         yield X_batch, y_batch      # Return one batch at a time
 
 
-def train_epoch(model, X_train, y_train, optimizer, rng):
+
+def get_augmentation_config(dataset_class):
+    if dataset_class is MNIST:
+        return 2, False
+
+    if dataset_class is FashionMNIST:
+        return 2, True
+
+    if dataset_class in (CIFAR10, CIFAR100):
+        return 4, True
+
+
+
+def train_epoch(model, X_train, y_train, optimizer, rng, use_data_augm, crop_padding, horizontal_flip):
     model.train()
 
     correct_predictions_train = 0
@@ -350,6 +385,9 @@ def train_epoch(model, X_train, y_train, optimizer, rng):
     train_batches = create_batches(X_train, y_train, batch_size=32, rng=rng, shuffle=True)    # generator object
     
     for X_train_batch, y_train_batch in train_batches:  # Extract tuple (X_train_batch_0, y_train_batch_0), ... from generator
+        if use_data_augm:
+            X_train_batch = augment_batch(X_train_batch, rng=rng, crop_padding=crop_padding, horizontal_flip=horizontal_flip)
+
         # ----- Forward -----
 
         batched_logits_train = model.forward(X_train_batch)
