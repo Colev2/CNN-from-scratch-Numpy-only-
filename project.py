@@ -113,7 +113,7 @@ def main():
             f"train_loss: {train_loss:.4f} | "
             f"val_acc: {val_accuracy:.4f}% , "
             f"val_loss: {val_loss:.4f} | "
-            f"learning_rate: {optimizer.learning_rate:.4f}"
+            f"learning_rate: {optimizer.learning_rate:.5f}"
             )
 
         stop = early_stopping.step(model=model, val_loss=val_loss, epoch=epoch)
@@ -127,11 +127,11 @@ def main():
     early_stopping.restore_best_weights(model)
 
     # Test evaluation
-    # test_loss, test_accuracy = evaluate(model, X_test, y_test)
+    test_loss, test_accuracy = evaluate(model, X_test, y_test)
 
-    # print(f"Test accuracy = {test_accuracy:.2f}% | "
-    #    f"Test loss = {test_loss:.3f}"
-    #   )
+    print(f"Test accuracy = {test_accuracy:.2f}% | "
+       f"Test loss = {test_loss:.3f}"
+      )
 
 
 

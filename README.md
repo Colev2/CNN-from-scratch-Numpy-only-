@@ -1,626 +1,944 @@
-1st run: 
-lr = 0.001
-optimizer: Adam(b1=0.9, b2=0.999, epsilon=1e-8)
-Architecture:
-    model = Sequential([
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
+# CNN from Scratch with NumPy
 
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
+A small convolutional neural network framework implemented **from scratch with NumPy**.
 
-        MaxPooling2D(pool_size=(2,2), stride=2),
+In this project I implemented a CNN without using a deep-learning framework. `torchvision` is used only to download and load the supported image datasets. The neural-network forward pass, backpropagation, parameter updates, loss function, regularization, and training loop are implemented using only the NumPy library.
 
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
+The program can train the same CNN pipeline on four datasets:
 
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
+- **MNIST**
+- **Fashion-MNIST**
+- **CIFAR-10**
+- **CIFAR-100**
 
-        MaxPooling2D(pool_size=(2,2), stride=2),
+---
 
-        Flatten(),
+## Features
 
-        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
-        BatchNorm(epsilon=1e-5, momentum=0.9),
-        ReLU(),
+The project currently includes:
 
-        Dropout(drop_prob=0.4, rng=rng),
+- 2D convolution with configurable filters, kernel size, padding, and stride
+- Vectorized convolution using NumPy window views and matrix multiplication
+- Backward pass for:
+  - input gradients
+  - weight gradients
+  - bias gradients
+- Max pooling 
+- Fully connected (`Dense`) layers
+- ReLU activation
+- Flatten layer
+- Batch Normalization for both convolutional and dense inputs
+- Inverted Dropout
+- Numerically stable Softmax + Cross-Entropy loss
+- He and Xavier weight initialization
+- Normal and uniform initialization distributions
+- SGD
+- SGD with Momentum
+- Adam
+- AdamW with decoupled weight decay
+- `ReduceLROnPlateau` learning-rate scheduling
+- Early stopping with restoration of the best model weights
+- Data Augmentation with random crop and random horizontal-flip
+- Stratified train/validation splitting
+- Mini-batch training with optional shuffling
+- Training/evaluation modes for layers such as BatchNorm and Dropout
+- Numerical gradient checks with `pytest`
 
-        Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
-            ])
+---
 
-    model.build(X_train.shape[1:])
-    optimizer = create_optimizer_object(model, optimizer_class, learning_rate)
+## Best Training Results
 
-    # Early Stopping
-    early_stopping = EarlyStopping(patience=7, min_delta=1e-3)
+Training a CNN implemented entirely with NumPy is computationally expensive, since both the forward and backward passes involve large matrix operations without the highly optimized kernels used by modern deep-learning frameworks.
 
-    # Learning Rate Scheduler
-    lr_scheduler = ReduceLROnPlateau(optimizer=optimizer, factor=0.5, patience=3, min_delta=1e-3, min_lr=1e-5)
+Each epoch takes several minutes to complete, since forward and backward passes are heavy multiplication operations. I tried to optimize them to the best of my ability. Obviously, there is a lot more that can be done. 
+
+The best validation performance was obtained with the following configuration:
+
+| Configuration           | Value                         |
+| ----------------------- | ----------------------------- |
+| Dataset                 | CIFAR-10                      |
+| Optimizer               | Adam                          |
+| Initial learning rate   | `0.001`                       |
+| Batch size              | `32`                          |
+| Early Stopping patience | `7`                           |
+| LR Scheduler            | ReduceLROnPlateau             |
+| LR reduction factor     | `0.5`                         |
+| LR Scheduler patience   | `3`                           |
+| Dropout probability     | `0.5`                         |
+| BatchNorm momentum      | `0.99`                        |
+| BatchNorm epsilon       | `1e-3`                        |
+| Data augmentation       | Random crop + horizontal flip |
+
+### Architecture
+
+```text
+Conv2D(32) → BatchNorm → ReLU
+Conv2D(32) → BatchNorm → ReLU
+MaxPooling2D
+
+Conv2D(64) → BatchNorm → ReLU
+Conv2D(64) → BatchNorm → ReLU
+MaxPooling2D
+
+Flatten
+Dropout(0.5)
+
+Dense(256) → BatchNorm → ReLU
+Dense(10)
+```
+
+## Best Training Results
+
+Most of the development, experimentation, and hyperparameter tuning for this project was performed on **CIFAR-10**, since it provides a more challenging benchmark than MNIST and Fashion-MNIST while remaining practical to train with a NumPy-only implementation.
+
+The framework also supports **MNIST, Fashion-MNIST, and CIFAR-100**, and the training pipeline can be run on any of the four datasets through the interactive dataset selection.
+
+The results reported below correspond specifically to **CIFAR-10**.
 
 
-1st run results:
-3
-Choose epochs: 20
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
+### Best Validation Result - CIFAR-10
+
+The best model weights were obtained at **epoch 29**:
+
+| Metric              |      Result |
+| ------------------- | ----------: |
+| Training accuracy   |  **84.71%** |
+| Training loss       |  **0.4326** |
+| Validation accuracy |  **87.52%** |
+| Validation loss     |  **0.3634** |
+| Learning rate       | **0.00025** |
+
+The learning-rate scheduler reduced the learning rate during training when validation loss stopped improving. Early stopping tracked the best validation loss and restored the weights from epoch 29 after training.
+
+### Final Test Result - CIFAR-10
+
+| Metric | Result |
+|---|---:|
+| Test accuracy | **XX.XX%** |
+| Test loss | **X.XXXX** |
+
+### Training History
+
+|  Epoch | Train Accuracy | Train Loss | Validation Accuracy | Validation Loss | Learning Rate |
+| -----: | -------------: | ---------: | ------------------: | --------------: | ------------: |
+|      1 |         47.39% |     1.4575 |              59.92% |          1.1413 |        0.0010 |
+|      2 |         60.95% |     1.0926 |              67.72% |          0.8766 |        0.0010 |
+|      3 |         66.02% |     0.9605 |              73.80% |          0.7439 |        0.0010 |
+|      4 |         69.52% |     0.8709 |              72.70% |          0.7854 |        0.0010 |
+|      5 |         71.04% |     0.8184 |              74.24% |          0.7443 |        0.0010 |
+|      6 |         72.60% |     0.7757 |              77.40% |          0.6290 |        0.0010 |
+|      7 |         73.76% |     0.7447 |              76.00% |          0.6998 |        0.0010 |
+|      8 |         74.93% |     0.7080 |              76.66% |          0.6664 |        0.0010 |
+|      9 |         75.92% |     0.6839 |              78.22% |          0.6349 |        0.0010 |
+|     10 |         76.83% |     0.6635 |              80.30% |          0.5776 |        0.0010 |
+|     11 |         77.62% |     0.6417 |              80.26% |          0.5609 |        0.0010 |
+|     12 |         78.39% |     0.6194 |              81.22% |          0.5323 |        0.0010 |
+|     13 |         78.49% |     0.6149 |              80.48% |          0.5677 |        0.0010 |
+|     14 |         79.12% |     0.5986 |              79.50% |          0.6238 |        0.0010 |
+|     15 |         79.77% |     0.5801 |              83.44% |          0.4794 |        0.0010 |
+|     16 |         80.14% |     0.5695 |              82.86% |          0.4848 |        0.0010 |
+|     17 |         80.43% |     0.5623 |              82.52% |          0.5042 |        0.0010 |
+|     18 |         80.88% |     0.5513 |              82.84% |          0.5023 |        0.0010 |
+|     19 |         81.21% |     0.5409 |              82.02% |          0.5179 |        0.0010 |
+|     20 |         82.46% |     0.5042 |              86.00% |          0.4055 |        0.0005 |
+|     21 |         83.28% |     0.4878 |              86.30% |          0.3942 |        0.0005 |
+|     22 |         83.23% |     0.4818 |              86.70% |          0.3974 |        0.0005 |
+|     23 |         83.47% |     0.4731 |              86.62% |          0.3932 |        0.0005 |
+|     24 |         83.80% |     0.4685 |              86.72% |          0.3833 |        0.0005 |
+|     25 |         83.97% |     0.4651 |              86.58% |          0.3931 |        0.0005 |
+|     26 |         83.96% |     0.4602 |              86.32% |          0.3935 |        0.0005 |
+|     27 |         84.32% |     0.4531 |              86.70% |          0.3969 |        0.0005 |
+|     28 |         84.33% |     0.4462 |              85.88% |          0.4116 |        0.0005 |
+| **29** |     **84.71%** | **0.4326** |          **87.52%** |      **0.3634** |   **0.00025** |
+|     30 |         85.13% |     0.4258 |              87.42% |          0.3657 |       0.00025 |
+
+The complete architecture and implementation of each layer are described in more detail below.
+
+
+
+
+## Why This Project?
+
+My purpose on starting this project was to get a deeper understanding of what is happening "under the hood" when a modern framework like Pytorch or Keras executes forward(x) and backward(x). I wanted to go deeper into the mathematics and implementation details that are "hidden" inside them, and to try to build a complete, decently-structured CNN pipeline without using a framework. I've built CNNs both in Keras and Pytorch, in the context of the deep learning courses I took at university, so I  had an okay understanding of the theory, but never implemented one from scratch. This was my first try.
+
+More specifically, in this project I had to: 
+
+1. construct the network layer by layer,
+2. compute the forward pass,
+3. calculate the loss,
+4. manually propagate gradients backward,
+5. update the parameters with an optimizer,
+6. regularize training,
+7. evaluate the model on unseen data.
+
+Of course NumPy is still used for efficient array operations and vectorization.
+
+---
+
+## Project Structure
+
+```text
+.
+├── project.py
+├── test_project.py
+│
+└── cnn_numpy/
+    ├── sequential.py
+    ├── optimizers.py
+    ├── early_stopping.py
+    ├── lr_scheduler.py
+    ├── data_augmentation.py
+    │
+    ├── layers/
+    │   ├── conv.py
+    │   ├── batchnorm.py
+    │   ├── relu.py
+    │   ├── maxpooling.py
+    │   ├── flatten.py
+    │   ├── dropout.py
+    │   └── dense.py
+    │
+    └── losses/
+        └── softmax_cross_entropy_loss.py
+```
+
+A `data/` directory is created automatically next to `project.py` when a dataset is downloaded.
+
+---
+
+## Supported Datasets
+
+The dataset is selected interactively when the program starts.
+
+| Dataset | Input type | Classes | Default augmentation |
+|---|---|---:|---|
+| MNIST | Grayscale | 10 | Random crop, padding 2 |
+| Fashion-MNIST | Grayscale | 10 | Random crop, padding 2 + horizontal flip |
+| CIFAR-10 | RGB | 10 | Random crop, padding 4 + horizontal flip |
+| CIFAR-100 | RGB | 100 | Random crop, padding 4 + horizontal flip |
+
+The loader automatically adds a channel dimension to grayscale datasets so that all images follow the same internal format:
+
+```text
+(B, H, W, C)
+```
+
+where:
+
+- `B` = batch size
+- `H` = image height
+- `W` = image width
+- `C` = number of channels
+
+---
+
+## Model Architecture
+
+The current training program builds the following CNN:
+
+```text
+Input
+  │
+  ├── Conv2D(32, 3×3, padding=1)
+  ├── BatchNorm
+  ├── ReLU
+  │
+  ├── Conv2D(32, 3×3, padding=1)
+  ├── BatchNorm
+  ├── ReLU
+  │
+  ├── MaxPooling2D(2×2, stride=2)
+  │
+  ├── Conv2D(64, 3×3, padding=1)
+  ├── BatchNorm
+  ├── ReLU
+  │
+  ├── Conv2D(64, 3×3, padding=1)
+  ├── BatchNorm
+  ├── ReLU
+  │
+  ├── MaxPooling2D(2×2, stride=2)
+  │
+  ├── Flatten
+  ├── Dropout(p=0.5)
+  │
+  ├── Dense(256)
+  ├── BatchNorm
+  ├── ReLU
+  │
+  └── Dense(number_of_classes)
+       │
+       └── Logits
+```
+
+The final layer contains:
+
+- 10 outputs for MNIST
+- 10 outputs for Fashion-MNIST
+- 10 outputs for CIFAR-10
+- 100 outputs for CIFAR-100
+
+The output layer returns **logits**. Softmax is applied internally by the loss implementation rather than being used as a separate model layer.
+
+---
+
+## Layers
+
+### `Conv2D`
+
+The convolution layer supports:
+
+- configurable number of filters
+- configurable kernel size
+- padding
+- stride
+- He or Xavier initialization
+- normal or uniform initialization
+- `float32` by default
+
+The forward pass uses:
+
+```python
+np.lib.stride_tricks.sliding_window_view
+```
+
+to obtain convolution windows and then performs the convolution using matrix multiplication.
+
+Conceptually:
+
+```text
+windows @ weights.T
+```
+
+This avoids deeply nested Python loops over the batch, spatial positions, filters, and channels.
+
+The backward pass manually computes:
+
+```text
+dL/dW
+dL/db
+dL/dX
+```
+
+Weight gradients are obtained by combining the upstream gradients with the convolution windows. Input gradients are first computed for every element of every window and then accumulated back into the corresponding input positions.
+
+---
+
+### `MaxPooling2D`
+
+Max pooling also uses `sliding_window_view` during its forward pass.
+
+For each pooling window, the layer stores the index of the maximum element. During backpropagation, the upstream gradient is routed only to the location that produced the maximum value.
+
+---
+
+### `Dense`
+
+The fully connected layer implements:
+
+```text
+Z = XWᵀ + b
+```
+
+and manually computes:
+
+```text
+dL/dX = dL/dZ · W
+dL/dW = (dL/dZ)ᵀ · X
+dL/db = Σ dL/dZ
+```
+
+---
+
+### `BatchNorm`
+
+Batch Normalization supports both:
+
+```text
+(B, H, W, C)
+```
+
+and:
+
+```text
+(B, D)
+```
+
+inputs.
+
+During training it computes batch statistics and updates running statistics using momentum. During evaluation it uses the stored running mean and running variance.
+
+The implementation includes trainable:
+
+```text
+gamma
+beta
+```
+
+parameters and manually computes their gradients together with the input gradient.
+
+---
+
+### `ReLU`
+
+The activation is:
+
+```text
+ReLU(x) = max(0, x)
+```
+
+The forward pass stores a boolean mask indicating which inputs were positive. The backward pass multiplies the incoming gradient by this mask.
+
+The convention used at zero is:
+
+```text
+ReLU'(0) = 0
+```
+
+---
+
+### `Flatten`
+
+`Flatten` converts convolutional feature maps from:
+
+```text
+(B, H, W, C)
+```
+
+to:
+
+```text
+(B, H·W·C)
+```
+
+and restores the original shape during the backward pass.
+
+---
+
+### `Dropout`
+
+The project implements **inverted dropout**.
+
+During training, activations are randomly masked and scaled by:
+
+```text
+1 / (1 - drop_probability)
+```
+
+During evaluation, Dropout becomes an identity operation, so no additional scaling is required.
+
+The current model uses:
+
+```text
+drop_prob = 0.5
+```
+
+before the first dense layer.
+
+---
+
+## Loss Function
+
+The project combines Softmax and Cross-Entropy into a single:
+
+```python
+SoftmaxCrossEntropyLoss
+```
+
+implementation.
+
+For numerical stability, logits are shifted by the maximum logit of each sample before exponentiation.
+
+The backward pass uses the standard result:
+
+```text
+dL/dZ = (P - Y) / B
+```
+
+where:
+
+- `P` is the softmax probability matrix
+- `Y` is the one-hot target matrix
+- `B` is the batch size
+
+Labels are stored as integer class indices, so a full one-hot matrix does not need to be explicitly constructed.
+
+---
+
+## Sequential Model
+
+`Sequential` receives an ordered list of layers.
+
+It is responsible for:
+
+- building every layer using the previous layer's output shape
+- executing the forward pass
+- executing the backward pass in reverse order
+- collecting trainable parameters and gradients
+- collecting parameters eligible for weight decay
+- saving and restoring model weights
+- switching all layers between training and evaluation mode
+
+Example:
+
+```python
+model = Sequential([
+    Conv2D(filters=32),
+    BatchNorm(epsilon=1e-3, momentum=0.99),
+    ReLU(),
+    MaxPooling2D(),
+    Flatten(),
+    Dense(neurons=10),
+])
+
+model.build(input_shape)
+```
+
+---
+
+## Weight Initialization
+
+Convolutional and Dense layers support:
+
+### He initialization
+
+Designed primarily for ReLU-based networks.
+
+### Xavier initialization
+
+Designed to keep activation variance more stable across layers.
+
+Both can use either:
+
+```text
+normal
+```
+
+or:
+
+```text
+uniform
+```
+
+distributions.
+
+When running `project.py`, the selected initialization and distribution are used for the convolutional layers. The current architecture explicitly uses He/normal initialization for the hidden Dense layer and Xavier/normal initialization for the output Dense layer.
+
+---
+
+## Optimizers
+
+### SGD
+
+Standard gradient descent:
+
+```text
+θ ← θ - ηg
+```
+
+---
+
+### SGD with Momentum
+
+Maintains a running update:
+
+```text
+uₜ = μuₜ₋₁ + gₜ
+θ ← θ - ηuₜ
+```
+
+The training program uses:
+
+```text
+momentum = 0.9
+```
+
+---
+
+### Adam
+
+Implements:
+
+- first-moment estimation
+- second-moment estimation
+- bias correction
+
+The default values used by `project.py` are:
+
+```text
+β₁ = 0.9
+β₂ = 0.999
+ε  = 1e-8
+```
+
+---
+
+### AdamW
+
+AdamW uses the same adaptive Adam update together with **decoupled weight decay**.
+
+Weight decay is applied only to parameters returned by:
+
+```python
+model.decayable_parameters()
+```
+
+In the current implementation, convolutional and dense **weight matrices** are decayable, while biases and BatchNorm parameters are not.
+
+---
+
+## Learning-Rate Scheduling
+
+The project includes:
+
+```python
+ReduceLROnPlateau
+```
+
+which monitors validation loss.
+
+The current training configuration uses:
+
+```text
+factor    = 0.5
+patience  = 3
+min_delta = 1e-3
+min_lr    = 1e-5
+```
+
+If validation loss stops improving sufficiently, the learning rate is reduced while respecting the configured minimum.
+
+---
+
+## Early Stopping
+
+Training also uses early stopping.
+
+Current configuration:
+
+```text
+patience  = 7
+min_delta = 1e-3
+```
+
+Whenever validation loss improves, a copy of the model weights is stored.
+
+When training finishes, the program restores the weights from the best validation epoch instead of keeping the weights from the final epoch.
+
+---
+
+## Data Augmentation
+
+Two augmentation operations are implemented.
+
+### Random crop
+
+The image is padded and a crop with the original image dimensions is sampled from a random position.
+
+### Random horizontal flip
+
+Each image is horizontally flipped with probability:
+
+```text
+0.5
+```
+
+Augmentation is applied **only to training batches**.
+
+A new random transformation can therefore be seen on each pass through the training data, while validation data remains unchanged.
+
+---
+
+## Data Preprocessing
+
+The training dataset is split into:
+
+```text
+90% training
+10% validation
+```
+
+using a **stratified split**, preserving approximately the same percentage of samples from each class.
+
+After the split, the mean and standard deviation are calculated from the **training set only**.
+
+The same training statistics are then used to standardize:
+
+- training data
+- validation data
+- test data
+
+This avoids using validation or test-set statistics during preprocessing.
+
+---
+
+## Training Loop
+
+Each epoch follows the standard neural-network training pipeline:
+
+```text
+Training mode
+     │
+     ├── shuffle training samples
+     ├── create mini-batches
+     ├── optionally augment each batch
+     │
+     ├── forward pass
+     ├── compute loss
+     ├── loss backward pass
+     ├── model backward pass
+     └── optimizer update
+
+Validation mode
+     │
+     ├── forward pass
+     ├── validation loss
+     └── validation accuracy
+
+Early stopping
+Learning-rate scheduler
+```
+
+The current batch size is:
+
+```text
+32
+```
+
+A NumPy random generator initialized with seed `42` is used by the main training program for reproducibility.
+
+---
+
+## Installation
+
+Clone the repository and install the required packages.
+
+```bash
+git clone <your-repository-url>
+cd <your-repository-directory>
+```
+
+Create and activate a virtual environment if desired, then install:
+
+```bash
+pip install numpy torch torchvision pytest
+```
+
+or:
+
+```bash
+pip install -r requirements.txt
+```
+
+`torchvision` is used to provide the datasets. 
+
+---
+
+## Running the Program
+
+Run:
+
+```bash
+python project.py
+```
+
+The program will ask for the training configuration interactively.
+
+Example flow:
+
+```text
+Choose training dataset:
+1) MNIST
+2) Fashion-MNIST
+3) CIFAR-10
+4) CIFAR-100
+
+Choose epochs:
+Choose weights' initialization for Convolutional Layers (He or Xavier):
+Choose weights' distribution for Convolutional Layers (Uniform or Normal):
+Choose learning rate:
+
 Choose optimizer:
 1) SGD
 2) SGD_momentum
 3) Adam
 4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 56.8222% , train_loss: 1.2293 | val_acc: 66.9600% , val_loss: 0.9413 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 70.3933% , train_loss: 0.8500 | val_acc: 70.9200% , val_loss: 0.8149 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 75.2400% , train_loss: 0.7053 | val_acc: 76.1000% , val_loss: 0.6970 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 78.7956% , train_loss: 0.6068 | val_acc: 78.4800% , val_loss: 0.6248 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 82.5289% , train_loss: 0.5069 | val_acc: 79.0800% , val_loss: 0.6163 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 85.1578% , train_loss: 0.4258 | val_acc: 77.9800% , val_loss: 0.6668 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 87.0111% , train_loss: 0.3671 | val_acc: 79.1800% , val_loss: 0.6351 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 89.2111% , train_loss: 0.3078 | val_acc: 80.5200% , val_loss: 0.6230 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 90.4956% , train_loss: 0.2699 | val_acc: 79.3600% , val_loss: 0.6685 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 94.0933% , train_loss: 0.1732 | val_acc: 81.2800% , val_loss: 0.6395 | learning_rate: 0.0005
-Training epoch 11...
-Epoch 11: train_acc: 95.3889% , train_loss: 0.1351 | val_acc: 80.4200% , val_loss: 0.7021 | learning_rate: 0.0005
-Training epoch 12...
-Epoch 12: train_acc: 96.0089% , train_loss: 0.1172 | val_acc: 80.2000% , val_loss: 0.7130 | learning_rate: 0.0005
-Training epoch 13...
-Epoch 13: train_acc: 96.3778% , train_loss: 0.1053 | val_acc: 80.3400% , val_loss: 0.7466 | learning_rate: 0.0005
-Best weights are at epoch: 5
-
-
-2nd run:
-lr = 0.0005
-optimizer: Adam(b1=0.9, b2=0.999, epsilon=1e-8)
-Same Architecture
-
-
-
-2nd run results:
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.0005
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 54.2178% , train_loss: 1.3048 | val_acc: 64.7800% , val_loss: 1.0010 | learning_rate: 0.0005
-Training epoch 2...
-Epoch 2: train_acc: 68.3467% , train_loss: 0.9041 | val_acc: 70.2800% , val_loss: 0.8275 | learning_rate: 0.0005
-Training epoch 3...
-Epoch 3: train_acc: 73.9467% , train_loss: 0.7443 | val_acc: 72.7400% , val_loss: 0.7730 | learning_rate: 0.0005
-Training epoch 4...
-Epoch 4: train_acc: 77.4956% , train_loss: 0.6407 | val_acc: 76.5000% , val_loss: 0.6690 | learning_rate: 0.0005
-Training epoch 5...
-Epoch 5: train_acc: 81.3311% , train_loss: 0.5385 | val_acc: 75.2600% , val_loss: 0.6989 | learning_rate: 0.0005
-Training epoch 6...
-Epoch 6: train_acc: 84.4089% , train_loss: 0.4501 | val_acc: 75.0600% , val_loss: 0.7521 | learning_rate: 0.0005
-Training epoch 7...
-Epoch 7: train_acc: 86.3933% , train_loss: 0.3886 | val_acc: 76.4600% , val_loss: 0.7065 | learning_rate: 0.0005
-Training epoch 8...
-Epoch 8: train_acc: 88.5244% , train_loss: 0.3283 | val_acc: 76.3400% , val_loss: 0.7137 | learning_rate: 0.0005
-Training epoch 9...
-Epoch 9: train_acc: 92.5200% , train_loss: 0.2208 | val_acc: 77.6200% , val_loss: 0.7044 | learning_rate: 0.0003
-Training epoch 10...
-Epoch 10: train_acc: 94.1867% , train_loss: 0.1759 | val_acc: 77.7600% , val_loss: 0.7195 | learning_rate: 0.0003
-Training epoch 11...
-Epoch 11: train_acc: 94.9578% , train_loss: 0.1533 | val_acc: 76.8200% , val_loss: 0.7640 | learning_rate: 0.0003
-Training epoch 12...
-Epoch 12: train_acc: 95.8200% , train_loss: 0.1293 | val_acc: 77.4800% , val_loss: 0.7955 | learning_rate: 0.0003
-Best weights are at epoch: 4
-
-
-
-
-
-3rd run:
-lr = 0.001
-optimizer: Adam(same parameter values)
-Dropout rate = 0.5
-Same architecture
-REMOVED:
-rng.shuffle(train_indexes) 
-rng.shuffle(val_indexes)
-FROM TRAIN_TEST_SPLIT SO RNG CHANGES -> WEIGHT INITIALIZATION CHANGES
-
-
-3rd run results:
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 54.9756% , train_loss: 1.2897 | val_acc: 67.1600% , val_loss: 0.9160 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 68.3111% , train_loss: 0.8986 | val_acc: 72.1000% , val_loss: 0.7972 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 73.3467% , train_loss: 0.7623 | val_acc: 75.4600% , val_loss: 0.7184 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 77.0156% , train_loss: 0.6587 | val_acc: 77.9800% , val_loss: 0.6253 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 79.8489% , train_loss: 0.5740 | val_acc: 78.8600% , val_loss: 0.6212 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 82.5133% , train_loss: 0.5006 | val_acc: 78.4800% , val_loss: 0.6158 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 84.7844% , train_loss: 0.4321 | val_acc: 79.1400% , val_loss: 0.6318 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 86.4578% , train_loss: 0.3806 | val_acc: 79.5200% , val_loss: 0.6035 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 88.1356% , train_loss: 0.3345 | val_acc: 80.2600% , val_loss: 0.6096 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 89.4711% , train_loss: 0.3026 | val_acc: 80.6200% , val_loss: 0.6075 | learning_rate: 0.0010
-Training epoch 11...
-Epoch 11: train_acc: 90.5311% , train_loss: 0.2651 | val_acc: 80.0600% , val_loss: 0.6477 | learning_rate: 0.0010
-Training epoch 12...
-Epoch 12: train_acc: 91.5289% , train_loss: 0.2414 | val_acc: 80.3000% , val_loss: 0.6492 | learning_rate: 0.0010
-Training epoch 13...
-Epoch 13: train_acc: 94.1422% , train_loss: 0.1657 | val_acc: 81.2000% , val_loss: 0.6448 | learning_rate: 0.0005
-Training epoch 14...
-Epoch 14: train_acc: 95.4400% , train_loss: 0.1337 | val_acc: 80.8800% , val_loss: 0.6856 | learning_rate: 0.0005
-Training epoch 15...
-Epoch 15: train_acc: 95.8222% , train_loss: 0.1208 | val_acc: 80.4000% , val_loss: 0.7291 | learning_rate: 0.0005
-Training epoch 16...
-Epoch 16: train_acc: 96.2533% , train_loss: 0.1088 | val_acc: 81.1200% , val_loss: 0.7499 | learning_rate: 0.0005
-Best weights are at epoch: 8
-
-
-
-
-4th run:
-lr = 0.001
-optimizer = Adam(same param values)
-Changed batch norm momentum from 0.9 -> 0.99
-   model = Sequential([
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
-        ReLU(),
-
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
-        ReLU(),
-
-        MaxPooling2D(pool_size=(2,2), stride=2),
-
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
-        ReLU(),
-
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
-        ReLU(),
-
-        MaxPooling2D(pool_size=(2,2), stride=2),
-
-        Flatten(),
-
-        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
-        BatchNorm(epsilon=1e-5, momentum=0.99),
-        ReLU(),
-
-        Dropout(drop_prob=0.5, rng=rng),
-
-        Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
-            ])
-
-    model.build(X_train.shape[1:])
-    optimizer = create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=weight_decay)
-
-    # Early Stopping
-    early_stopping = EarlyStopping(patience=7, min_delta=1e-3)
-
-    # Learning Rate Scheduler
-    lr_scheduler = ReduceLROnPlateau(optimizer=optimizer, factor=0.5, patience=3, min_delta=1e-3, min_lr=1e-5)
-
-
-4th run results:
-
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 54.9756% , train_loss: 1.2897 | val_acc: 61.7200% , val_loss: 1.0835 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 68.3111% , train_loss: 0.8986 | val_acc: 72.1000% , val_loss: 0.7989 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 73.3467% , train_loss: 0.7623 | val_acc: 74.4400% , val_loss: 0.7451 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 77.0156% , train_loss: 0.6587 | val_acc: 74.7200% , val_loss: 0.7265 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 79.8489% , train_loss: 0.5740 | val_acc: 77.6000% , val_loss: 0.6180 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 82.5133% , train_loss: 0.5006 | val_acc: 76.3200% , val_loss: 0.6845 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 84.7844% , train_loss: 0.4321 | val_acc: 76.1600% , val_loss: 0.7254 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 86.4578% , train_loss: 0.3806 | val_acc: 77.1000% , val_loss: 0.6862 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 88.1356% , train_loss: 0.3345 | val_acc: 78.5000% , val_loss: 0.7000 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 91.8689% , train_loss: 0.2356 | val_acc: 81.4400% , val_loss: 0.6026 | learning_rate: 0.0005
-Training epoch 11...
-Epoch 11: train_acc: 93.2533% , train_loss: 0.1928 | val_acc: 80.4800% , val_loss: 0.6553 | learning_rate: 0.0005
-Training epoch 12...
-Epoch 12: train_acc: 94.1600% , train_loss: 0.1676 | val_acc: 80.2800% , val_loss: 0.6880 | learning_rate: 0.0005
-Training epoch 13...
-Epoch 13: train_acc: 94.7822% , train_loss: 0.1515 | val_acc: 79.9600% , val_loss: 0.7223 | learning_rate: 0.0005
-Training epoch 14...
-Epoch 14: train_acc: 95.3133% , train_loss: 0.1373 | val_acc: 80.7000% , val_loss: 0.7117 | learning_rate: 0.0005
-Training epoch 15...
-Epoch 15: train_acc: 96.5489% , train_loss: 0.1029 | val_acc: 81.0000% , val_loss: 0.6933 | learning_rate: 0.0003
-Training epoch 16...
-Epoch 16: train_acc: 97.0422% , train_loss: 0.0881 | val_acc: 81.0600% , val_loss: 0.7339 | learning_rate: 0.0003
-Training epoch 17...
-Epoch 17: train_acc: 97.1933% , train_loss: 0.0824 | val_acc: 80.9400% , val_loss: 0.7334 | learning_rate: 0.0003
-Training epoch 18...
-Epoch 18: train_acc: 97.5622% , train_loss: 0.0744 | val_acc: 80.7800% , val_loss: 0.7587 | learning_rate: 0.0003
-Best weights are at epoch: 10
-
-
-5th run:
-Everything same as 4th but with AdamW(weight_decay=1e-4)
-
-
-5th run results:
-
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-4
-Give weight decay: 0.0001
-Training epoch 1...
-Epoch 1: train_acc: 54.7711% , train_loss: 1.2887 | val_acc: 64.5200% , val_loss: 1.0009 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 68.1511% , train_loss: 0.8966 | val_acc: 71.2000% , val_loss: 0.8240 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 73.4956% , train_loss: 0.7620 | val_acc: 73.6600% , val_loss: 0.7578 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 76.8222% , train_loss: 0.6574 | val_acc: 72.8400% , val_loss: 0.7859 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 80.1911% , train_loss: 0.5684 | val_acc: 77.0200% , val_loss: 0.6603 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 82.7356% , train_loss: 0.4959 | val_acc: 77.2200% , val_loss: 0.6922 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 84.7867% , train_loss: 0.4324 | val_acc: 75.9000% , val_loss: 0.7566 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 86.7378% , train_loss: 0.3772 | val_acc: 77.4200% , val_loss: 0.7344 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 88.4689% , train_loss: 0.3324 | val_acc: 77.2800% , val_loss: 0.7428 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 91.8711% , train_loss: 0.2323 | val_acc: 80.4600% , val_loss: 0.6087 | learning_rate: 0.0005
-Training epoch 11...
-Epoch 11: train_acc: 93.4489% , train_loss: 0.1890 | val_acc: 79.8800% , val_loss: 0.6649 | learning_rate: 0.0005
-Training epoch 12...
-Epoch 12: train_acc: 94.3289% , train_loss: 0.1659 | val_acc: 80.5000% , val_loss: 0.6606 | learning_rate: 0.0005
-Training epoch 13...
-Epoch 13: train_acc: 94.8844% , train_loss: 0.1477 | val_acc: 79.5400% , val_loss: 0.7323 | learning_rate: 0.0005
-Training epoch 14...
-Epoch 14: train_acc: 95.2511% , train_loss: 0.1350 | val_acc: 81.1000% , val_loss: 0.7009 | learning_rate: 0.0005
-Training epoch 15...
-Epoch 15: train_acc: 96.7422% , train_loss: 0.0979 | val_acc: 81.7800% , val_loss: 0.7136 | learning_rate: 0.0003
-Training epoch 16...
-Epoch 16: train_acc: 97.0400% , train_loss: 0.0898 | val_acc: 81.2400% , val_loss: 0.7255 | learning_rate: 0.0003
-Training epoch 17...
-Epoch 17: train_acc: 97.2378% , train_loss: 0.0797 | val_acc: 81.2400% , val_loss: 0.7228 | learning_rate: 0.0003
-Training epoch 18...
-Epoch 18: train_acc: 97.5289% , train_loss: 0.0741 | val_acc: 80.9000% , val_loss: 0.7930 | learning_rate: 0.0003
-Best weights are at epoch: 10
-
-
-
-6th run:
-Changed Dropout layer position: Now it is after Flatten Layer
-
-
-6th run results:
-
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 54.7356% , train_loss: 1.2664 | val_acc: 62.4800% , val_loss: 1.0724 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 68.0244% , train_loss: 0.9027 | val_acc: 73.5200% , val_loss: 0.7650 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 73.0333% , train_loss: 0.7686 | val_acc: 74.2400% , val_loss: 0.7236 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 76.0667% , train_loss: 0.6785 | val_acc: 74.1000% , val_loss: 0.7209 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 78.4867% , train_loss: 0.6112 | val_acc: 77.4800% , val_loss: 0.6419 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 80.6667% , train_loss: 0.5476 | val_acc: 78.9200% , val_loss: 0.6179 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 82.6444% , train_loss: 0.4986 | val_acc: 75.8000% , val_loss: 0.6855 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 84.0889% , train_loss: 0.4564 | val_acc: 80.5200% , val_loss: 0.5416 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 85.5244% , train_loss: 0.4157 | val_acc: 81.2200% , val_loss: 0.5466 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 86.4600% , train_loss: 0.3855 | val_acc: 80.1200% , val_loss: 0.5916 | learning_rate: 0.0010
-Training epoch 11...
-Epoch 11: train_acc: 87.6000% , train_loss: 0.3508 | val_acc: 79.7400% , val_loss: 0.6041 | learning_rate: 0.0010
-Training epoch 12...
-Epoch 12: train_acc: 88.6578% , train_loss: 0.3229 | val_acc: 81.6400% , val_loss: 0.5595 | learning_rate: 0.0010
-Training epoch 13...
-Epoch 13: train_acc: 91.2733% , train_loss: 0.2519 | val_acc: 83.6000% , val_loss: 0.4767 | learning_rate: 0.0005
-Training epoch 14...
-Epoch 14: train_acc: 92.0178% , train_loss: 0.2281 | val_acc: 84.5400% , val_loss: 0.4633 | learning_rate: 0.0005
-Training epoch 15...
-Epoch 15: train_acc: 92.7067% , train_loss: 0.2094 | val_acc: 84.5200% , val_loss: 0.4899 | learning_rate: 0.0005
-Training epoch 16...
-Epoch 16: train_acc: 93.0422% , train_loss: 0.1987 | val_acc: 84.4000% , val_loss: 0.4917 | learning_rate: 0.0005
-Training epoch 17...
-Epoch 17: train_acc: 93.6444% , train_loss: 0.1823 | val_acc: 83.5800% , val_loss: 0.5164 | learning_rate: 0.0005
-Training epoch 18...
-Epoch 18: train_acc: 94.0022% , train_loss: 0.1738 | val_acc: 83.6600% , val_loss: 0.5163 | learning_rate: 0.0005
-Training epoch 19...
-Epoch 19: train_acc: 95.0378% , train_loss: 0.1465 | val_acc: 84.6400% , val_loss: 0.4848 | learning_rate: 0.0003
-Training epoch 20...
-Epoch 20: train_acc: 95.1889% , train_loss: 0.1407 | val_acc: 85.0000% , val_loss: 0.4879 | learning_rate: 0.0003
-Training epoch 21...
-Epoch 21: train_acc: 95.7822% , train_loss: 0.1270 | val_acc: 84.7200% , val_loss: 0.4965 | learning_rate: 0.0003
-Training epoch 22...
-Epoch 22: train_acc: 95.8511% , train_loss: 0.1230 | val_acc: 84.8600% , val_loss: 0.4861 | learning_rate: 0.0003
-Best weights are at epoch: 14
-
-
-7th run: 
-
-Changed BatchNorm epsilon from e = 1e-5 to e = 1e-3
-
-
-7th run results:
-
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 54.5533% , train_loss: 1.2802 | val_acc: 59.5000% , val_loss: 1.1937 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 67.9378% , train_loss: 0.9133 | val_acc: 69.9000% , val_loss: 0.8592 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 72.8422% , train_loss: 0.7760 | val_acc: 72.5200% , val_loss: 0.7936 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 76.0178% , train_loss: 0.6829 | val_acc: 73.2200% , val_loss: 0.7518 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 78.4844% , train_loss: 0.6142 | val_acc: 77.8800% , val_loss: 0.6183 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 80.7111% , train_loss: 0.5491 | val_acc: 78.8800% , val_loss: 0.6094 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 82.2711% , train_loss: 0.5022 | val_acc: 77.0000% , val_loss: 0.6523 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 83.7556% , train_loss: 0.4613 | val_acc: 77.9200% , val_loss: 0.6607 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 85.3911% , train_loss: 0.4187 | val_acc: 81.8200% , val_loss: 0.5336 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 86.4356% , train_loss: 0.3855 | val_acc: 82.4000% , val_loss: 0.5223 | learning_rate: 0.0010
-Training epoch 11...
-Epoch 11: train_acc: 87.7133% , train_loss: 0.3492 | val_acc: 80.0000% , val_loss: 0.5907 | learning_rate: 0.0010
-Training epoch 12...
-Epoch 12: train_acc: 88.3622% , train_loss: 0.3287 | val_acc: 82.0600% , val_loss: 0.5555 | learning_rate: 0.0010
-Training epoch 13...
-Epoch 13: train_acc: 89.4644% , train_loss: 0.3013 | val_acc: 82.4800% , val_loss: 0.5205 | learning_rate: 0.0010
-Training epoch 14...
-Epoch 14: train_acc: 90.2489% , train_loss: 0.2770 | val_acc: 81.0200% , val_loss: 0.6207 | learning_rate: 0.0010
-Training epoch 15...
-Epoch 15: train_acc: 90.6378% , train_loss: 0.2637 | val_acc: 83.3400% , val_loss: 0.5238 | learning_rate: 0.0010
-Training epoch 16...
-Epoch 16: train_acc: 91.1711% , train_loss: 0.2476 | val_acc: 81.1800% , val_loss: 0.6034 | learning_rate: 0.0010
-Training epoch 17...
-Epoch 17: train_acc: 91.8356% , train_loss: 0.2356 | val_acc: 81.6200% , val_loss: 0.5893 | learning_rate: 0.0010
-Training epoch 18...
-Epoch 18: train_acc: 93.7578% , train_loss: 0.1817 | val_acc: 84.1600% , val_loss: 0.5151 | learning_rate: 0.0005
-Training epoch 19...
-Epoch 19: train_acc: 94.6156% , train_loss: 0.1598 | val_acc: 84.0800% , val_loss: 0.5308 | learning_rate: 0.0005
-Training epoch 20...
-Epoch 20: train_acc: 94.7156% , train_loss: 0.1526 | val_acc: 83.8200% , val_loss: 0.5250 | learning_rate: 0.0005
-Training epoch 21...
-Epoch 21: train_acc: 95.1178% , train_loss: 0.1416 | val_acc: 84.2400% , val_loss: 0.5236 | learning_rate: 0.0005
-Training epoch 22...
-Epoch 22: train_acc: 95.1111% , train_loss: 0.1393 | val_acc: 83.8600% , val_loss: 0.5301 | learning_rate: 0.0005
-Training epoch 23...
-Epoch 23: train_acc: 95.9733% , train_loss: 0.1184 | val_acc: 85.0800% , val_loss: 0.5118 | learning_rate: 0.0003
-Training epoch 24...
-Epoch 24: train_acc: 96.1378% , train_loss: 0.1107 | val_acc: 84.8400% , val_loss: 0.5188 | learning_rate: 0.0003
-Training epoch 25...
-Epoch 25: train_acc: 96.6178% , train_loss: 0.1022 | val_acc: 85.3600% , val_loss: 0.5142 | learning_rate: 0.0003
-Best weights are at epoch: 23
-
-
-
-8th run:
-Added Data augmentation:
-    model = Sequential([
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-3, momentum=0.99),
-        ReLU(),
-
-        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-3, momentum=0.99),
-        ReLU(),
-
-        MaxPooling2D(pool_size=(2,2), stride=2),
-
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-3, momentum=0.99),
-        ReLU(),
-
-        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
-        BatchNorm(epsilon=1e-3, momentum=0.99),
-        ReLU(),
-
-        MaxPooling2D(pool_size=(2,2), stride=2),
-
-        Flatten(),
-        Dropout(drop_prob=0.5, rng=rng),
-        
-        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
-        BatchNorm(epsilon=1e-3, momentum=0.99),
-        ReLU(),
-
-        Dense(neurons=len(np.unique(labels)), rng=rng, initialization="xavier", distribution="normal"),
-        ])
-
-    model.build(X_train.shape[1:])
-    optimizer = create_optimizer_object(model, optimizer_class, learning_rate, weight_decay=weight_decay)
-
-    # Early Stopping
-    early_stopping = EarlyStopping(patience=7, min_delta=1e-3)
-
-    # Learning Rate Scheduler
-    lr_scheduler = ReduceLROnPlateau(optimizer=optimizer, factor=0.5, patience=3, min_delta=1e-3, min_lr=1e-5)
-
-    # Data augmentation configuration (crop, horizontal flip)
-    crop_padding, horizontal_flip = get_augmentation_config(dataset_class)
-
-    # Training
-    for epoch in range(epochs):
-        print(f"Training epoch {epoch + 1}...")
-        train_loss, train_accuracy = train_epoch(model, X_train, y_train, optimizer, rng, crop_padding, horizontal_flip)
-
-        val_loss, val_accuracy = evaluate(model, X_val, y_val)
-
-        print(
-            f"Epoch {epoch + 1}: "
-            f"train_acc: {train_accuracy:.4f}% , "
-            f"train_loss: {train_loss:.4f} | "
-            f"val_acc: {val_accuracy:.4f}% , "
-            f"val_loss: {val_loss:.4f} | "
-            f"learning_rate: {optimizer.learning_rate:.4f}"
-            )
-
-        stop = early_stopping.step(model=model, val_loss=val_loss, epoch=epoch)
-        if stop:
-            break
-
-        lr_scheduler.step(val_loss=val_loss)
-
-
-    # Restore best weights
-    early_stopping.restore_best_weights(model)
-
-
-    8th run results:
-    Choose epochs: 30
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
-Training epoch 1...
-Epoch 1: train_acc: 47.3933% , train_loss: 1.4575 | val_acc: 59.9200% , val_loss: 1.1413 | learning_rate: 0.0010
-Training epoch 2...
-Epoch 2: train_acc: 60.9467% , train_loss: 1.0926 | val_acc: 67.7200% , val_loss: 0.8766 | learning_rate: 0.0010
-Training epoch 3...
-Epoch 3: train_acc: 66.0156% , train_loss: 0.9605 | val_acc: 73.8000% , val_loss: 0.7439 | learning_rate: 0.0010
-Training epoch 4...
-Epoch 4: train_acc: 69.5244% , train_loss: 0.8709 | val_acc: 72.7000% , val_loss: 0.7854 | learning_rate: 0.0010
-Training epoch 5...
-Epoch 5: train_acc: 71.0422% , train_loss: 0.8184 | val_acc: 74.2400% , val_loss: 0.7443 | learning_rate: 0.0010
-Training epoch 6...
-Epoch 6: train_acc: 72.6000% , train_loss: 0.7757 | val_acc: 77.4000% , val_loss: 0.6290 | learning_rate: 0.0010
-Training epoch 7...
-Epoch 7: train_acc: 73.7622% , train_loss: 0.7447 | val_acc: 76.0000% , val_loss: 0.6998 | learning_rate: 0.0010
-Training epoch 8...
-Epoch 8: train_acc: 74.9289% , train_loss: 0.7080 | val_acc: 76.6600% , val_loss: 0.6664 | learning_rate: 0.0010
-Training epoch 9...
-Epoch 9: train_acc: 75.9200% , train_loss: 0.6839 | val_acc: 78.2200% , val_loss: 0.6349 | learning_rate: 0.0010
-Training epoch 10...
-Epoch 10: train_acc: 76.8267% , train_loss: 0.6635 | val_acc: 80.3000% , val_loss: 0.5776 | learning_rate: 0.0010
-Training epoch 11...
-Epoch 11: train_acc: 77.6244% , train_loss: 0.6417 | val_acc: 80.2600% , val_loss: 0.5609 | learning_rate: 0.0010
-Training epoch 12...
-Epoch 12: train_acc: 78.3911% , train_loss: 0.6194 | val_acc: 81.2200% , val_loss: 0.5323 | learning_rate: 0.0010
-Training epoch 13...
-Epoch 13: train_acc: 78.4933% , train_loss: 0.6149 | val_acc: 80.4800% , val_loss: 0.5677 | learning_rate: 0.0010
-Training epoch 14...
-Epoch 14: train_acc: 79.1222% , train_loss: 0.5986 | val_acc: 79.5000% , val_loss: 0.6238 | learning_rate: 0.0010
-Training epoch 15...
-Epoch 15: train_acc: 79.7733% , train_loss: 0.5801 | val_acc: 83.4400% , val_loss: 0.4794 | learning_rate: 0.0010
-Training epoch 16...
-Epoch 16: train_acc: 80.1356% , train_loss: 0.5695 | val_acc: 82.8600% , val_loss: 0.4848 | learning_rate: 0.0010
-Training epoch 17...
-Epoch 17: train_acc: 80.4311% , train_loss: 0.5623 | val_acc: 82.5200% , val_loss: 0.5042 | learning_rate: 0.0010
-Training epoch 18...
-Epoch 18: train_acc: 80.8800% , train_loss: 0.5513 | val_acc: 82.8400% , val_loss: 0.5023 | learning_rate: 0.0010
-Training epoch 19...
-Epoch 19: train_acc: 81.2133% , train_loss: 0.5409 | val_acc: 82.0200% , val_loss: 0.5179 | learning_rate: 0.0010
-Training epoch 20...
-Epoch 20: train_acc: 82.4644% , train_loss: 0.5042 | val_acc: 86.0000% , val_loss: 0.4055 | learning_rate: 0.0005
-Training epoch 21...
-Epoch 21: train_acc: 83.2756% , train_loss: 0.4878 | val_acc: 86.3000% , val_loss: 0.3942 | learning_rate: 0.0005
-Training epoch 22...
-Epoch 22: train_acc: 83.2333% , train_loss: 0.4818 | val_acc: 86.7000% , val_loss: 0.3974 | learning_rate: 0.0005
-Training epoch 23...
-Epoch 23: train_acc: 83.4667% , train_loss: 0.4731 | val_acc: 86.6200% , val_loss: 0.3932 | learning_rate: 0.0005
-Training epoch 24...
-Epoch 24: train_acc: 83.8044% , train_loss: 0.4685 | val_acc: 86.7200% , val_loss: 0.3833 | learning_rate: 0.0005
-Training epoch 25...
-Epoch 25: train_acc: 83.9711% , train_loss: 0.4651 | val_acc: 86.5800% , val_loss: 0.3931 | learning_rate: 0.0005
-Training epoch 26...
-Epoch 26: train_acc: 83.9600% , train_loss: 0.4602 | val_acc: 86.3200% , val_loss: 0.3935 | learning_rate: 0.0005
-Training epoch 27...
-Epoch 27: train_acc: 84.3244% , train_loss: 0.4531 | val_acc: 86.7000% , val_loss: 0.3969 | learning_rate: 0.0005
-Training epoch 28...
-Epoch 28: train_acc: 84.3333% , train_loss: 0.4462 | val_acc: 85.8800% , val_loss: 0.4116 | learning_rate: 0.0005
-Training epoch 29...
-Epoch 29: train_acc: 84.7111% , train_loss: 0.4326 | val_acc: 87.5200% , val_loss: 0.3634 | learning_rate: 0.0003
-Training epoch 30...
-Epoch 30: train_acc: 85.1311% , train_loss: 0.4258 | val_acc: 87.4200% , val_loss: 0.3657 | learning_rate: 0.0003
-Best weights are at epoch: 29
+
+Use data augmentation? (yes/no):
+```
+
+If AdamW is selected, the program also asks for:
+
+```text
+weight decay
+```
+
+During training, each epoch prints values in the form:
+
+```text
+Epoch N:
+train_acc: ...
+train_loss: ...
+val_acc: ...
+val_loss: ...
+learning_rate: ...
+```
+
+---
+
+## Example Configuration
+
+A reasonable example for CIFAR-10 is:
+
+```text
+Dataset:          CIFAR-10
+Initialization:   He
+Distribution:     Normal
+Optimizer:        AdamW
+Learning rate:    0.001
+Weight decay:     0.0001
+Data augmentation: yes
+```
+
+These values are only an example configuration; the best hyperparameters depend on the dataset and training run.
+
+---
+
+## Test-Set Evaluation
+
+The official test split is kept separate from both training and model selection.
+
+Hyperparameters, architecture choices, and regularization settings are selected using only the training and validation sets. After training is complete, Early Stopping restores the weights from the epoch with the best validation loss.
+
+The restored model is then evaluated once on the held-out test set to provide a final estimate of its performance on unseen data.
+## Testing
+
+The project uses `pytest`.
+
+Run:
+
+```bash
+pytest test_project.py
+```
+
+The current test suite checks:
+
+- mini-batch creation
+- stratified train/validation splitting
+- optimizer construction
+- BatchNorm backward gradients
+- Dense backward gradients
+- Conv2D backward gradients
+
+For the differentiable layers, analytical gradients from the manually implemented backward passes are compared against **numerical finite-difference gradients**.
+
+For a parameter \(x\), the numerical approximation I used is:
+
+```text
+dL/dx ≈ [L(x + ε) - L(x - ε)] / (2ε)
+```
+
+The tests use `float64` during gradient checking for greater numerical precision and compare the analytical and numerical results with NumPy's `assert_allclose`.
+
+This is especially useful in a from-scratch neural-network implementation because a backward pass can look plausible while still containing subtle indexing, broadcasting, or summation errors.
+
+---
+
+## Design Notes
+
+### Data type
+
+The network uses `np.float32` by default for activations, parameters, and gradients.
+
+Using `float32` reduces memory usage compared with `float64` and is sufficient for normal neural-network training. The dtype can still be changed when constructing the layers.
+
+For numerical gradient checking, the tests explicitly use `float64` to reduce floating-point error and allow more accurate comparison between analytical and numerical gradients.
+
+### Tensor layout
+
+Convolutional tensors use the `(B, H, W, C)` layout throughout the framework, where the channel dimension is last.
+
+Keeping a consistent representation across datasets and layers simplifies shape propagation and broadcasting, particularly in BatchNorm.
+
+### No autograd
+
+Every backward method is written explicitly. Gradients are stored directly inside the corresponding layer.
+
+### Shape propagation
+
+Layers contain a `build()` method. `Sequential.build()` passes each layer's output shape to the next layer so parameters can be initialized with the correct shape before training.
+
+### Vectorization and memory trade-off
+
+The convolution and pooling implementations favor NumPy vectorization over deeply nested Python loops.
+
+For convolution, input windows are exposed using `sliding_window_view` and reshaped so that most of the computation can be expressed as matrix multiplication. This significantly reduces Python-level looping, at the cost of additional intermediate arrays and memory usage during forward and backward propagation.
+
+### In-place parameter updates
+
+Optimizers update the existing NumPy arrays in place. This keeps the parameter references collected by the optimizer valid throughout training.
+
+### Training and evaluation modes
+
+`model.train()` and `model.eval()` propagate the mode to all layers.
+
+This matters particularly for:
+
+- BatchNorm
+- Dropout
+
+### Weight-decay selection
+
+Layers explicitly declare which parameters should receive weight decay. This keeps decay away from parameters such as BatchNorm scale/shift values and biases.
+
+---
+
+## Educational Focus
+
+The project is intentionally more explicit than a production deep-learning library.
+
+Many operations that frameworks normally perform automatically are visible here, including:
+
+- tensor-shape management
+- parameter initialization
+- gradient storage
+- forward caches
+- backpropagation
+- optimizer state
+- train/eval behavior
+- regularization
+- numerical gradient validation
+
+The purpose is not to replace optimized libraries, but to build a concrete understanding of the mechanics behind them.
+
+---
+
+## Possible Future Improvements
+
+Potential extensions include:
+
+- model checkpoint files
+- saving/loading trained models from disk
+- additional activation functions
+- additional pooling layers
+- more data-augmentation techniques
+- configurable model architectures
+- configurable batch size
+- additional learning-rate schedulers
+- more extensive unit and gradient tests
+- training-history plots
+- automatic test-set evaluation after final model selection
+- command-line arguments instead of interactive prompts
+- performance comparisons with an equivalent PyTorch or Keras implementation
+
+---
+
+## Acknowledgements
+
+This project relies on:
+
+- **NumPy** for numerical computation and vectorized array operations
+- **torchvision** for downloading and loading MNIST, Fashion-MNIST, CIFAR-10, and CIFAR-100
+- **pytest** for automated testing
+
+All CNN layers, backward passes, loss computation, optimizers, training utilities, regularization logic, and model orchestration in this repository are implemented directly in the project code.
