@@ -21,7 +21,7 @@ class Sequential:
         return self.output_shape
 
 
-    def forward(self, x):
+    def forward(self, x: np.ndarray) -> np.ndarray:
         if not self.built:
             raise RuntimeError("Sequential: Model must be built before forward")
         
@@ -31,7 +31,7 @@ class Sequential:
         return x        # Logits
 
 
-    def backward(self, dout):
+    def backward(self, dout: np.ndarray) -> np.ndarray:
         if not self.built:
             raise RuntimeError("Sequential: Model must be built before backward")
         
@@ -56,10 +56,10 @@ class Sequential:
         if not self.built:
             raise RuntimeError("Sequential: Model needs to be built")
         
-        weights = []
+        weights = []    
 
         for layer in self.layers:
-            weights.append(layer.get_weights())
+            weights.append(layer.get_weights())  # weights: [[conv1_weights, conv1_bias], [conv2_weights, conv2_bias],...]
 
         return weights
 
@@ -71,7 +71,7 @@ class Sequential:
         if len(weights) != len(self.layers):
             raise ValueError("Sequential: Number of weight groups must match number of layers")
 
-        for layer, layer_weights in zip(self.layers, weights):
+        for layer, layer_weights in zip(self.layers, weights):      # https://docs.python.org/3/library/functions.html#zip
             layer.set_weights(layer_weights)
 
 
@@ -95,4 +95,50 @@ class Sequential:
 
 
 
+    def save_weights(self, filepath):
+        if not self.built:
+            raise RuntimeError("Sequential: Model needs to be built before saving")
 
+        model_weights = self.get_weights()
+
+        save_dict = {}
+
+        for layer_idx, layer_weights in enumerate(model_weights):
+            for weight_idx, weight in enumerate(layer_weights):
+                save_dict[f"layer_{layer_idx}_weight_{weight_idx}"] = weight    # {layer_0_weight_0: conv1.weights, 
+                                                                                # layer_0_weight_1: conv1.nias,....}
+        # https://numpy.org/doc/stable/reference/generated/numpy.savez.html
+        np.savez(filepath, **save_dict)     # Dict unpacking to kwargs: layer_0_weight_0=conv1.weights, ...
+
+
+    def load_weights(self, filepath):
+        if not self.built:
+            raise RuntimeError("Sequential: Model needs to be built before loading weights")
+
+        saved_data = np.load(filepath, allow_pickle=False)  # https://numpy.org/doc/stable/reference/generated/numpy.load.html
+
+        model_weights = []
+
+        for layer_idx, layer in enumerate(self.layers):
+            current_layer_weights = layer.get_weights()     # e.g: [con1.weights, conv1.bias]
+
+            layer_weights = []
+
+            for weight_idx in range(len(current_layer_weights)):
+                key = f"layer_{layer_idx}_weight_{weight_idx}"
+
+                if key not in saved_data:
+                    raise ValueError(f"Sequential: Missing '{key}' in saved model")
+
+                if saved_data[key].shape != current_layer_weights[weight_idx].shape:
+                    raise ValueError(f"Sequential: Shape mismatch for '{key}': "
+                        f"expected {current_layer_weights[weight_idx].shape}, got {saved_data[key].shape}"
+                    )
+
+                layer_weights.append(saved_data[key])
+
+            model_weights.append(layer_weights)
+
+        saved_data.close()
+
+        self.set_weights(model_weights)

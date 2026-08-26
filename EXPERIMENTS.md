@@ -1,3 +1,5 @@
+CIFAR-10 EXPERIMENTS
+
 1st run: 
 lr = 0.001
 optimizer: Adam(b1=0.9, b2=0.999, epsilon=1e-8)

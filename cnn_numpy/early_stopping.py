@@ -40,5 +40,5 @@ class EarlyStopping:
     def restore_best_weights(self, model: object):
         model.set_weights(self.best_weights)
 
-        print(f"Best weights are at epoch: {self.best_epoch + 1}")
+        print(f"Restored Best weights from epoch: {self.best_epoch + 1}")
 

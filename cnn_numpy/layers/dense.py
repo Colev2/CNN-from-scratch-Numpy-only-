@@ -93,6 +93,9 @@ class Dense:
         
         self.input = input
 
+        # X: (B, D)
+        # W: (N, D)
+        # Z = X @ W.T + b    -> (B, N)
         output = self.input @ self.weights.T + self.bias    # (B,features) @ (features,neurons) + (neurons,) -> (B,neurons)
         self.output_shape = output.shape
 
@@ -108,15 +111,17 @@ class Dense:
         if dout.shape != self.output_shape:
             raise ValueError("Dense: Dout shape must be same as Dense's forward's output's shape")
 
-        # z = Wx + b
+        # X: (B, D)
+        # W: (N, D)
+        # Z = X @ W.T + b    -> (B, N)
 
-        # θL/θx_j = Σ_i (θL/θz_i * w_ij) = Σ_i (dout_i * w_ij)
+        # θL/θx_b,d = Σ_n (θL/θz_b,n * w_n,d) = Σ_n (dout_b,n * w_n,d) = dout @ w
         din = dout @ self.weights     # (B,neurons) @ (neurons,features)  ->  (B,features)
 
-        # θL/θb_i = θL/θz_i = dout_i
+        # θL/θb_n = Σ_b (θL/θz_b,d) = Σ_b (dout_b,d)
         self.dbias[...] = np.sum(dout, axis=0)
 
-        # θL/θw_ij = θL/θz_i * x_j = dout_i * x_j
+        # θL/θw_n,d = Σ_b (θL/θz_b,n * x_b,d) = Σ_b (dout_b,n * x_b,d) = dout.T @ x
         self.dweights[...] = dout.T @ self.input
 
         return din
