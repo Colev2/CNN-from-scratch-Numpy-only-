@@ -49,7 +49,15 @@ def main():
     test_eval = get_yes_no("\nEvaluate best model on the test set? (yes/no): ")
 
     if test_eval:
-        evaluate_test_model(model, X_test, y_test, mean, std)
+        predictions = evaluate_test_model(model, X_test, y_test, mean, std)
+
+        show_matrix = get_yes_no("\nShow confusion matrix? (yes/no): ")
+
+        if show_matrix:
+            matrix = create_confusion_matrix(y_test, predictions, len(class_names))
+
+            print_per_class_accuracy(matrix, class_names)
+            show_confusion_matrix(matrix, class_names)
 
     make_predictions(model, dataset_class, mean, std, class_names)
 
@@ -438,8 +446,8 @@ def load_trained_model(dataset_class):
         return None
 
     with np.load(preprocessing_path, allow_pickle=False) as preprocessing_data:
-        mean = preprocessing_data["mean"]
-        std = preprocessing_data["std"]
+        mean = preprocessing_data["mean"].reshape(-1)
+        std = preprocessing_data["std"].reshape(-1)
         class_names = preprocessing_data["class_names"].tolist()
 
     rng = np.random.default_rng(42)
@@ -460,13 +468,17 @@ def load_trained_model(dataset_class):
 # Test evaluation
 
 def evaluate_test_model(model, X_test, y_test, mean, std):
+    X_test = X_test.copy()
+
     X_test -= mean
     X_test /= std
 
-    test_loss, test_accuracy = evaluate(model, X_test, y_test)
+    test_loss, test_accuracy, predictions = evaluate(model, X_test, y_test, return_predictions=True)
 
     print(f"\nTest accuracy = {test_accuracy:.2f}%")
     print(f"Test loss = {test_loss:.3f}")
+
+    return predictions
 
 
 # Single image prediction
@@ -480,6 +492,31 @@ def print_available_classes(class_names):
         print("  " + ", ".join(class_names[start:start + classes_per_line]))
 
 
+def center_crop_and_resize(image, target_width, target_height):
+    source_width, source_height = image.size
+
+    source_aspect_ratio = source_width / source_height
+    target_aspect_ratio = target_width / target_height
+
+    if source_aspect_ratio > target_aspect_ratio:
+        # Image is too wide -> crop left and right
+        new_width = round(source_height * target_aspect_ratio)
+        left = (source_width - new_width) // 2
+
+        image = image.crop((left, 0, left + new_width, source_height))
+
+    elif source_aspect_ratio < target_aspect_ratio:
+        # Image is too tall -> crop top and bottom
+        new_height = round(source_width / target_aspect_ratio)
+        top = (source_height - new_height) // 2
+
+        image = image.crop((0, top, source_width, top + new_height))
+
+    image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+    return image
+
+
 def load_and_preprocess_image(image_path, dataset_class, mean, std):
     dataset_info = get_dataset_info(dataset_class)
 
@@ -490,16 +527,19 @@ def load_and_preprocess_image(image_path, dataset_class, mean, std):
         raise FileNotFoundError(f"Image file '{image_path}' was not found.")
 
     with Image.open(image_path) as image:
-        image = image.convert(dataset_info["image_mode"])   # Convert image type to corresponding dataset img type
+        image = image.convert(dataset_info["image_mode"])
 
         height, width, _ = dataset_info["input_shape"]
 
-        # Resize to the dimensions of the dataset the model trained on
-        image = image.resize((width, height))
+        image = center_crop_and_resize(image, width, height)
+
+        # Keep a copy to display what the model receives spatially
+        resized_image = image.copy()
+
         image = np.asarray(image, dtype=np.float32)
 
     if image.ndim == 2:
-        image = image[:, :, np.newaxis]     # add channel axis
+        image = image[:, :, np.newaxis]
 
     expected_shape = dataset_info["input_shape"]
 
@@ -509,9 +549,9 @@ def load_and_preprocess_image(image_path, dataset_class, mean, std):
     image = (image - mean) / std
     image = np.asarray(image, dtype=np.float32)
 
-    image = image[np.newaxis, ...]  # add batch axis
+    image = image[np.newaxis, ...]
 
-    return image
+    return image, resized_image
 
 
 def predict_image(model, image, class_names):
@@ -523,21 +563,37 @@ def predict_image(model, image, class_names):
     exp_logits = np.exp(shifted_logits)
     probabilities = exp_logits / np.sum(exp_logits)
 
-    predicted_class_idx = np.argmax(probabilities)
+    # Sort class indices from highest to lowest probability and get the top 3
+    top3_indices = np.argsort(probabilities)[::-1][:3]
 
-    predicted_class = class_names[predicted_class_idx]
-    confidence_probab = probabilities[predicted_class_idx]
+    top3_predictions = []
 
-    return predicted_class, confidence_probab
+    for class_idx in top3_indices:
+        predicted_class = class_names[class_idx]
+        confidence = probabilities[class_idx]
+
+        top3_predictions.append((predicted_class, confidence))  # e.g: [(cat, 80%), (dog, 10%), (deer, 5%)]
+
+    return top3_predictions
 
 
-def show_prediction(image_path, predicted_class, confidence):
+def show_prediction(image_path, resized_image, predicted_class, confidence):
     with Image.open(image_path) as image:
-        image = image.copy()
+        original_image = image.copy()
 
-    plt.imshow(image)
-    plt.title(f"Prediction: {predicted_class}\nConfidence: {confidence * 100:.2f}%")
-    plt.axis("off")
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+    axes[0].imshow(original_image)
+    axes[0].set_title(f"Original\n{original_image.width} x {original_image.height}")
+    axes[0].axis("off")
+
+    axes[1].imshow(resized_image, interpolation="nearest")
+    axes[1].set_title(f"Model input\n{resized_image.width} x {resized_image.height}")
+    axes[1].axis("off")
+
+    fig.suptitle(f"Prediction: {predicted_class} | Confidence: {confidence * 100:.2f}%")
+
+    plt.tight_layout()
     plt.show()
 
 
@@ -555,7 +611,7 @@ def make_predictions(model, dataset_class, mean, std, class_names):
         image_path = input("\nEnter image path: ")
 
         try:
-            image = load_and_preprocess_image(image_path, dataset_class, mean, std)
+            image, resized_image = load_and_preprocess_image(image_path, dataset_class, mean, std)
 
         except FileNotFoundError as error:
             print(error)
@@ -565,9 +621,16 @@ def make_predictions(model, dataset_class, mean, std, class_names):
             print("The selected file could not be opened as an image.")
             continue
 
-        predicted_class, confidence = predict_image(model, image, class_names)
+        top3_predictions = predict_image(model, image, class_names)
 
-        show_prediction(image_path, predicted_class, confidence)
+        print("\nTop 3 predictions:")
+
+        for rank, (predicted_class, confidence) in enumerate(top3_predictions, start=1):
+            print(f"{rank}. {predicted_class}: {confidence * 100:.2f}%")
+
+        predicted_class, confidence = top3_predictions[0]
+
+        show_prediction(image_path, resized_image, predicted_class, confidence)
 
         another_prediction = get_yes_no("\nMake another prediction? (yes/no): ")
 
@@ -730,13 +793,16 @@ def train_epoch(model, X_train, y_train, optimizer, rng, use_data_augm, crop_pad
 
 # Evaluation
 
-def evaluate(model, X, y):
+def evaluate(model, X, y, return_predictions=False):
     model.eval()
 
     correct_predictions = 0
     sample_loss_sum = 0
 
     loss = SoftmaxCrossEntropyLoss()
+
+    if return_predictions:
+        all_predictions = []
 
     batches = create_batches(X, y, batch_size=32, shuffle=False)
 
@@ -749,10 +815,76 @@ def evaluate(model, X, y):
         predicted_class_idx = np.argmax(logits, axis=1)
         correct_predictions += np.count_nonzero(predicted_class_idx == y_batch)
 
+        if return_predictions:
+            all_predictions.append(predicted_class_idx)
+
     accuracy = (correct_predictions / X.shape[0]) * 100
     average_loss = sample_loss_sum / len(y)
 
+    if return_predictions:
+        all_predictions = np.concatenate(all_predictions)
+        return average_loss, accuracy, all_predictions
+
     return average_loss, accuracy
+
+
+def create_confusion_matrix(y_true, y_pred, num_classes):
+    matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
+
+    for true_class, predicted_class in zip(y_true, y_pred):
+        matrix[true_class, predicted_class] += 1
+
+    return matrix
+
+
+def show_confusion_matrix(matrix, class_names):
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    image = ax.imshow(matrix)
+
+    ax.set_xticks(np.arange(len(class_names)))
+    ax.set_yticks(np.arange(len(class_names)))
+
+    ax.set_xticklabels(class_names, rotation=45, ha="right")
+    ax.set_yticklabels(class_names)
+
+    ax.set_xlabel("Predicted class")
+    ax.set_ylabel("True class")
+    ax.set_title("Confusion Matrix")
+
+    for row in range(matrix.shape[0]):
+        for col in range(matrix.shape[1]):
+            ax.text(col, row, matrix[row, col], ha="center", va="center")
+
+    fig.colorbar(image, ax=ax)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def print_per_class_accuracy(matrix, class_names):
+    print("\nPer-class test accuracy:")
+
+    for class_idx, class_name in enumerate(class_names):
+        correct = matrix[class_idx, class_idx]
+        total = np.sum(matrix[class_idx])
+        accuracy = correct / total * 100
+
+        print(f"{class_name}: {accuracy:.2f}%")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
