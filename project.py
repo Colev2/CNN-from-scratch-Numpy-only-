@@ -357,7 +357,7 @@ def create_cifar100_model(num_classes, rng, initialization="he", distribution="n
         MaxPooling2D(pool_size=(2,2), stride=2),
 
         Flatten(),
-        Dropout(drop_prob=0.5, rng=rng),
+        Dropout(drop_prob=0.25, rng=rng),
 
         Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
         BatchNorm(epsilon=1e-3, momentum=0.99),

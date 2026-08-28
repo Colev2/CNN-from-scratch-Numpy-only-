@@ -983,3 +983,151 @@ Epoch 60: train_acc: 71.8933% , train_loss: 0.9350 | val_acc: 64.5000% , val_los
 
 Training finished
 Restored Best weights from epoch: 52
+
+
+
+12th run:
+
+changed dropout rate from 0.5 to 0.25
+
+
+
+12th run results:
+
+Training epoch 1...
+Epoch 1: train_acc: 16.2756% , train_loss: 3.5406 | val_acc: 23.4600% , val_loss: 3.1499 | learning_rate: 0.00100
+
+Training epoch 2...
+Epoch 2: train_acc: 29.8667% , train_loss: 2.7609 | val_acc: 35.0400% , val_loss: 2.5578 | learning_rate: 0.00100
+
+Training epoch 3...
+Epoch 3: train_acc: 37.4889% , train_loss: 2.3913 | val_acc: 39.3400% , val_loss: 2.3100 | learning_rate: 0.00100
+
+Training epoch 4...
+Epoch 4: train_acc: 42.5844% , train_loss: 2.1625 | val_acc: 44.4800% , val_loss: 2.0547 | learning_rate: 0.00100
+
+Training epoch 5...
+Epoch 5: train_acc: 46.0644% , train_loss: 2.0070 | val_acc: 46.2800% , val_loss: 2.0034 | learning_rate: 0.00100
+
+Training epoch 6...
+Epoch 6: train_acc: 48.7467% , train_loss: 1.8781 | val_acc: 48.6800% , val_loss: 1.9100 | learning_rate: 0.00100
+
+Training epoch 7...
+Epoch 7: train_acc: 51.1489% , train_loss: 1.7820 | val_acc: 44.5800% , val_loss: 2.1061 | learning_rate: 0.00100
+
+Training epoch 8...
+Epoch 8: train_acc: 52.7378% , train_loss: 1.7093 | val_acc: 52.7800% , val_loss: 1.7635 | learning_rate: 0.00100
+
+Training epoch 9...
+Epoch 9: train_acc: 54.4444% , train_loss: 1.6365 | val_acc: 53.1000% , val_loss: 1.7323 | learning_rate: 0.00100
+
+Training epoch 10...
+Epoch 10: train_acc: 55.8356% , train_loss: 1.5778 | val_acc: 53.1000% , val_loss: 1.7147 | learning_rate: 0.00100
+
+Training epoch 11...
+Epoch 11: train_acc: 57.0044% , train_loss: 1.5253 | val_acc: 53.9000% , val_loss: 1.6711 | learning_rate: 0.00100
+
+Training epoch 12...
+Epoch 12: train_acc: 58.1956% , train_loss: 1.4759 | val_acc: 55.0200% , val_loss: 1.6217 | learning_rate: 0.00100
+
+Training epoch 13...
+Epoch 13: train_acc: 59.4822% , train_loss: 1.4282 | val_acc: 54.4400% , val_loss: 1.6817 | learning_rate: 0.00100
+
+Training epoch 14...
+Epoch 14: train_acc: 60.3556% , train_loss: 1.3907 | val_acc: 55.5400% , val_loss: 1.6403 | learning_rate: 0.00100
+
+Training epoch 15...
+Epoch 15: train_acc: 61.5267% , train_loss: 1.3502 | val_acc: 54.2800% , val_loss: 1.6889 | learning_rate: 0.00100
+
+Training epoch 16...
+Epoch 16: train_acc: 62.0844% , train_loss: 1.3240 | val_acc: 56.9000% , val_loss: 1.5996 | learning_rate: 0.00100
+
+Training epoch 17...
+Epoch 17: train_acc: 62.9222% , train_loss: 1.2944 | val_acc: 57.4600% , val_loss: 1.5480 | learning_rate: 0.00100
+
+Training epoch 18...
+Epoch 18: train_acc: 63.4400% , train_loss: 1.2587 | val_acc: 58.5400% , val_loss: 1.5226 | learning_rate: 0.00100
+
+Training epoch 19...
+Epoch 19: train_acc: 64.2311% , train_loss: 1.2294 | val_acc: 56.6000% , val_loss: 1.5836 | learning_rate: 0.00100
+
+Training epoch 20...
+Epoch 20: train_acc: 64.9000% , train_loss: 1.2098 | val_acc: 58.1200% , val_loss: 1.5489 | learning_rate: 0.00100
+
+Training epoch 21...
+Epoch 21: train_acc: 65.0800% , train_loss: 1.1893 | val_acc: 59.8800% , val_loss: 1.4694 | learning_rate: 0.00100
+
+Training epoch 22...
+Epoch 22: train_acc: 65.8844% , train_loss: 1.1640 | val_acc: 59.1400% , val_loss: 1.5104 | learning_rate: 0.00100
+
+Training epoch 23...
+Epoch 23: train_acc: 66.5578% , train_loss: 1.1386 | val_acc: 57.9000% , val_loss: 1.5585 | learning_rate: 0.00100
+
+Training epoch 24...
+Epoch 24: train_acc: 67.2356% , train_loss: 1.1227 | val_acc: 58.0200% , val_loss: 1.6187 | learning_rate: 0.00100
+
+Training epoch 25...
+Epoch 25: train_acc: 67.1889% , train_loss: 1.1068 | val_acc: 59.4800% , val_loss: 1.5084 | learning_rate: 0.00100
+
+Training epoch 26...
+Epoch 26: train_acc: 70.5289% , train_loss: 0.9852 | val_acc: 62.0000% , val_loss: 1.4028 | learning_rate: 0.00050
+
+Training epoch 27...
+Epoch 27: train_acc: 71.5444% , train_loss: 0.9521 | val_acc: 62.4800% , val_loss: 1.3982 | learning_rate: 0.00050
+
+Training epoch 28...
+Epoch 28: train_acc: 71.9089% , train_loss: 0.9380 | val_acc: 62.6400% , val_loss: 1.3809 | learning_rate: 0.00050
+
+Training epoch 29...
+Epoch 29: train_acc: 72.6444% , train_loss: 0.9164 | val_acc: 62.7800% , val_loss: 1.3723 | learning_rate: 0.00050
+
+Training epoch 30...
+Epoch 30: train_acc: 72.8444% , train_loss: 0.8981 | val_acc: 62.0600% , val_loss: 1.4205 | learning_rate: 0.00050
+
+Training epoch 31...
+Epoch 31: train_acc: 73.0333% , train_loss: 0.8942 | val_acc: 61.8600% , val_loss: 1.3985 | learning_rate: 0.00050
+
+Training epoch 32...
+Epoch 32: train_acc: 73.3911% , train_loss: 0.8786 | val_acc: 62.4400% , val_loss: 1.4081 | learning_rate: 0.00050
+
+Training epoch 33...
+Epoch 33: train_acc: 73.7956% , train_loss: 0.8691 | val_acc: 62.9200% , val_loss: 1.3938 | learning_rate: 0.00050
+
+Training epoch 34...
+Epoch 34: train_acc: 75.3378% , train_loss: 0.8131 | val_acc: 63.5400% , val_loss: 1.3508 | learning_rate: 0.00025
+
+Training epoch 35...
+Epoch 35: train_acc: 75.6222% , train_loss: 0.7971 | val_acc: 64.3000% , val_loss: 1.3470 | learning_rate: 0.00025
+
+Training epoch 36...
+Epoch 36: train_acc: 76.4822% , train_loss: 0.7684 | val_acc: 63.9000% , val_loss: 1.3550 | learning_rate: 0.00025
+
+Training epoch 37...
+Epoch 37: train_acc: 76.4578% , train_loss: 0.7753 | val_acc: 63.8600% , val_loss: 1.3762 | learning_rate: 0.00025
+
+Training epoch 38...
+Epoch 38: train_acc: 76.4489% , train_loss: 0.7695 | val_acc: 64.0000% , val_loss: 1.3641 | learning_rate: 0.00025
+
+Training epoch 39...
+Epoch 39: train_acc: 76.7733% , train_loss: 0.7592 | val_acc: 63.7600% , val_loss: 1.3583 | learning_rate: 0.00025
+
+Training epoch 40...
+Epoch 40: train_acc: 77.7467% , train_loss: 0.7276 | val_acc: 64.2800% , val_loss: 1.3437 | learning_rate: 0.00013
+
+Training epoch 41...
+Epoch 41: train_acc: 78.0911% , train_loss: 0.7193 | val_acc: 63.9400% , val_loss: 1.3394 | learning_rate: 0.00013
+
+Training epoch 42...
+Epoch 42: train_acc: 77.9533% , train_loss: 0.7161 | val_acc: 64.3400% , val_loss: 1.3505 | learning_rate: 0.00013
+
+Training epoch 43...
+Epoch 43: train_acc: 78.1578% , train_loss: 0.7123 | val_acc: 64.3200% , val_loss: 1.3454 | learning_rate: 0.00013
+
+Training epoch 44...
+
+
+
+
+13th run:
+
+
