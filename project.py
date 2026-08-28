@@ -284,7 +284,7 @@ def load_dataset(dataset_class: type):
 
 # Model creation
 
-def create_model(dataset_class, num_classes, rng, initialization="he", distribution="normal"):
+def create_default_model(dataset_class, num_classes, rng, initialization="he", distribution="normal"):
     dataset_info = get_dataset_info(dataset_class)
 
     model = Sequential([
@@ -321,6 +321,64 @@ def create_model(dataset_class, num_classes, rng, initialization="he", distribut
     model.build(dataset_info["input_shape"])
 
     return model
+
+
+
+def create_cifar100_model(num_classes, rng, initialization="he", distribution="normal"):
+    model = Sequential([
+        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        Conv2D(filters=32, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        MaxPooling2D(pool_size=(2,2), stride=2),
+
+        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        Conv2D(filters=64, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        MaxPooling2D(pool_size=(2,2), stride=2),
+
+        Conv2D(filters=128, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        Conv2D(filters=128, filter_shape=(3,3), padding=1, stride=1, rng=rng, initialization=initialization, distribution=distribution),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        MaxPooling2D(pool_size=(2,2), stride=2),
+
+        Flatten(),
+        Dropout(drop_prob=0.5, rng=rng),
+
+        Dense(neurons=256, rng=rng, initialization="he", distribution="normal"),
+        BatchNorm(epsilon=1e-3, momentum=0.99),
+        ReLU(),
+
+        Dense(neurons=num_classes, rng=rng, initialization="xavier", distribution="normal")
+    ])
+
+    model.build((32, 32, 3))
+
+    return model
+
+
+
+def create_model(dataset_class, num_classes, rng, initialization="he", distribution="normal"):
+    if dataset_class is CIFAR100:
+        return create_cifar100_model(num_classes, rng, initialization, distribution)
+
+    return create_default_model(dataset_class, num_classes, rng, initialization, distribution)
+
+
 
 
 # Training
@@ -564,7 +622,7 @@ def predict_image(model, image, class_names):
     probabilities = exp_logits / np.sum(exp_logits)
 
     # Sort class indices from highest to lowest probability and get the top 3
-    top3_indices = np.argsort(probabilities)[::-1][:3]
+    top3_indices = np.argsort(probabilities)[::-1][:3]  # https://numpy.org/doc/stable/reference/generated/numpy.argsort.html
 
     top3_predictions = []
 

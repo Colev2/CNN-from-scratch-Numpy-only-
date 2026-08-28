@@ -1,5 +1,8 @@
 # CNN from Scratch with NumPy
 
+#### Video Demo: https://youtu.be/CfTh9dmLmEw?si=aSngNFH0FmFdadTB
+#### Description:
+
 A small convolutional neural network framework implemented **from scratch with NumPy**.
 
 In this project I implemented a CNN without using a deep-learning framework. `torchvision` is used only to download and load the supported image datasets. The neural-network forward pass, backpropagation, parameter updates, loss function, regularization, and training loop are implemented using only the NumPy library.
