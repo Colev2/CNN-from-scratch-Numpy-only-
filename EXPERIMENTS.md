@@ -47,17 +47,7 @@ Architecture:
 
 
 1st run results:
-3
-Choose epochs: 20
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
+ 
 Training epoch 1...
 Epoch 1: train_acc: 56.8222% , train_loss: 1.2293 | val_acc: 66.9600% , val_loss: 0.9413 | learning_rate: 0.0010
 Training epoch 2...
@@ -95,16 +85,7 @@ Same Architecture
 
 
 2nd run results:
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.0005
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
+
 Training epoch 1...
 Epoch 1: train_acc: 54.2178% , train_loss: 1.3048 | val_acc: 64.7800% , val_loss: 1.0010 | learning_rate: 0.0005
 Training epoch 2...
@@ -204,16 +185,6 @@ Changed batch norm momentum from 0.9 -> 0.99
 
 4th run results:
 
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-3
 Training epoch 1...
 Epoch 1: train_acc: 54.9756% , train_loss: 1.2897 | val_acc: 61.7200% , val_loss: 1.0835 | learning_rate: 0.0010
 Training epoch 2...
@@ -259,23 +230,15 @@ Everything same as 4th but with AdamW(weight_decay=1e-4)
 
 5th run results:
 
-Choose epochs: 25
-Choose weights' initialization for Convolutional Layers (He or Xavier): he
-Choose weights' distribution for Convolutional Layers (Uniform or Normal): normal
-Choose learning rate: 0.001
-Choose optimizer:
-1) SGD
-2) SGD_momentum
-3) Adam
-4) AdamW
-4
-Give weight decay: 0.0001
 Training epoch 1...
 Epoch 1: train_acc: 54.7711% , train_loss: 1.2887 | val_acc: 64.5200% , val_loss: 1.0009 | learning_rate: 0.0010
+
 Training epoch 2...
 Epoch 2: train_acc: 68.1511% , train_loss: 0.8966 | val_acc: 71.2000% , val_loss: 0.8240 | learning_rate: 0.0010
+
 Training epoch 3...
 Epoch 3: train_acc: 73.4956% , train_loss: 0.7620 | val_acc: 73.6600% , val_loss: 0.7578 | learning_rate: 0.0010
+
 Training epoch 4...
 Epoch 4: train_acc: 76.8222% , train_loss: 0.6574 | val_acc: 72.8400% , val_loss: 0.7859 | learning_rate: 0.0010
 Training epoch 5...
@@ -1130,4 +1093,155 @@ Training epoch 44...
 
 13th run:
 
+Changed Dropout position: From after Flatten layer -> To after ReLU of Dense(256)
+
+
+
+13th run results:
+
+
+Training epoch 1...
+Epoch 1: train_acc: 15.4978% , train_loss: 3.5859 | val_acc: 20.7200% , val_loss: 3.2370 | learning_rate: 0.00100
+
+Training epoch 2...
+Epoch 2: train_acc: 28.7733% , train_loss: 2.8212 | val_acc: 33.9400% , val_loss: 2.5297 | learning_rate: 0.00100
+
+Training epoch 3...
+Epoch 3: train_acc: 35.6378% , train_loss: 2.4741 | val_acc: 41.3200% , val_loss: 2.2395 | learning_rate: 0.00100
+
+Training epoch 4...
+Epoch 4: train_acc: 40.3000% , train_loss: 2.2542 | val_acc: 43.8000% , val_loss: 2.1309 | learning_rate: 0.00100
+
+Training epoch 5...
+Epoch 5: train_acc: 44.2200% , train_loss: 2.0858 | val_acc: 47.3400% , val_loss: 1.9734 | learning_rate: 0.00100
+
+Training epoch 6...
+Epoch 6: train_acc: 46.7578% , train_loss: 1.9634 | val_acc: 44.3200% , val_loss: 2.0855 | learning_rate: 0.00100
+
+Training epoch 7...
+Epoch 7: train_acc: 48.7622% , train_loss: 1.8736 | val_acc: 48.0600% , val_loss: 1.9421 | learning_rate: 0.00100
+
+Training epoch 8...
+Epoch 8: train_acc: 50.5711% , train_loss: 1.7957 | val_acc: 52.3800% , val_loss: 1.7578 | learning_rate: 0.00100
+
+Training epoch 9...
+Epoch 9: train_acc: 52.3778% , train_loss: 1.7239 | val_acc: 53.4800% , val_loss: 1.7335 | learning_rate: 0.00100
+
+Training epoch 10...
+Epoch 10: train_acc: 53.9511% , train_loss: 1.6587 | val_acc: 52.2200% , val_loss: 1.7651 | learning_rate: 0.00100
+
+Training epoch 11...
+Epoch 11: train_acc: 54.9444% , train_loss: 1.6014 | val_acc: 53.5400% , val_loss: 1.6897 | learning_rate: 0.00100
+
+Training epoch 12...
+Epoch 12: train_acc: 56.2356% , train_loss: 1.5612 | val_acc: 53.2200% , val_loss: 1.7346 | learning_rate: 0.00100
+
+Training epoch 13...
+Epoch 13: train_acc: 57.2422% , train_loss: 1.5088 | val_acc: 53.1000% , val_loss: 1.7338 | learning_rate: 0.00100
+
+Training epoch 14...
+Epoch 14: train_acc: 58.2644% , train_loss: 1.4750 | val_acc: 55.6800% , val_loss: 1.5981 | learning_rate: 0.00100
+
+Training epoch 15...
+Epoch 15: train_acc: 59.3578% , train_loss: 1.4239 | val_acc: 56.3600% , val_loss: 1.5774 | learning_rate: 0.00100
+
+Training epoch 16...
+Epoch 16: train_acc: 60.0222% , train_loss: 1.3974 | val_acc: 57.3400% , val_loss: 1.5670 | learning_rate: 0.00100
+
+Training epoch 17...
+Epoch 17: train_acc: 60.6000% , train_loss: 1.3695 | val_acc: 56.6600% , val_loss: 1.5767 | learning_rate: 0.00100
+
+Training epoch 18...
+Epoch 18: train_acc: 61.2600% , train_loss: 1.3420 | val_acc: 57.8800% , val_loss: 1.5760 | learning_rate: 0.00100
+
+Training epoch 19...
+Epoch 19: train_acc: 62.5467% , train_loss: 1.3015 | val_acc: 58.4800% , val_loss: 1.5325 | learning_rate: 0.00100
+
+Training epoch 20...
+Epoch 20: train_acc: 62.7600% , train_loss: 1.2828 | val_acc: 57.1200% , val_loss: 1.6588 | learning_rate: 0.00100
+
+Training epoch 21...
+Epoch 21: train_acc: 63.7244% , train_loss: 1.2536 | val_acc: 57.8400% , val_loss: 1.5519 | learning_rate: 0.00100
+
+Training epoch 22...
+Epoch 22: train_acc: 63.9267% , train_loss: 1.2347 | val_acc: 57.6600% , val_loss: 1.5743 | learning_rate: 0.00100
+
+Training epoch 23...
+Epoch 23: train_acc: 64.7644% , train_loss: 1.2113 | val_acc: 59.1400% , val_loss: 1.5266 | learning_rate: 0.00100
+
+Training epoch 24...
+Epoch 24: train_acc: 65.0089% , train_loss: 1.1970 | val_acc: 57.4000% , val_loss: 1.5691 | learning_rate: 0.00100
+
+Training epoch 25...
+Epoch 25: train_acc: 65.5000% , train_loss: 1.1779 | val_acc: 60.1600% , val_loss: 1.4794 | learning_rate: 0.00100
+
+Training epoch 26...
+Epoch 26: train_acc: 66.0356% , train_loss: 1.1558 | val_acc: 58.6400% , val_loss: 1.5406 | learning_rate: 0.00100
+
+Training epoch 27...
+Epoch 27: train_acc: 66.5578% , train_loss: 1.1378 | val_acc: 58.6400% , val_loss: 1.5688 | learning_rate: 0.00100
+
+Training epoch 28...
+Epoch 28: train_acc: 67.0978% , train_loss: 1.1219 | val_acc: 59.8000% , val_loss: 1.5068 | learning_rate: 0.00100
+
+Training epoch 29...
+Epoch 29: train_acc: 67.5244% , train_loss: 1.1033 | val_acc: 60.3200% , val_loss: 1.4815 | learning_rate: 0.00100
+
+Training epoch 30...
+Epoch 30: train_acc: 70.1044% , train_loss: 1.0084 | val_acc: 61.8800% , val_loss: 1.4249 | learning_rate: 0.00050
+
+Training epoch 31...
+Epoch 31: train_acc: 71.1267% , train_loss: 0.9615 | val_acc: 63.9000% , val_loss: 1.3798 | learning_rate: 0.00050
+
+Training epoch 32...
+Epoch 32: train_acc: 71.5578% , train_loss: 0.9427 | val_acc: 62.6200% , val_loss: 1.4113 | learning_rate: 0.00050
+
+Training epoch 33...
+Epoch 33: train_acc: 72.0800% , train_loss: 0.9295 | val_acc: 63.1800% , val_loss: 1.3929 | learning_rate: 0.00050
+
+Training epoch 34...
+Epoch 34: train_acc: 72.4467% , train_loss: 0.9087 | val_acc: 62.9800% , val_loss: 1.4110 | learning_rate: 0.00050
+
+Training epoch 35...
+Epoch 35: train_acc: 72.8578% , train_loss: 0.9004 | val_acc: 63.5600% , val_loss: 1.3873 | learning_rate: 0.00050
+
+Training epoch 36...
+Epoch 36: train_acc: 74.3156% , train_loss: 0.8442 | val_acc: 64.8400% , val_loss: 1.3431 | learning_rate: 0.00025
+
+Training epoch 37...
+Epoch 37: train_acc: 74.7778% , train_loss: 0.8283 | val_acc: 64.0800% , val_loss: 1.3770 | learning_rate: 0.00025
+
+Training epoch 38...
+Epoch 38: train_acc: 75.1711% , train_loss: 0.8190 | val_acc: 64.5800% , val_loss: 1.3648 | learning_rate: 0.00025
+
+Training epoch 39...
+Epoch 39: train_acc: 75.1467% , train_loss: 0.8148 | val_acc: 64.1800% , val_loss: 1.3540 | learning_rate: 0.00025
+
+Training epoch 40...
+Epoch 40: train_acc: 75.4378% , train_loss: 0.8003 | val_acc: 64.0800% , val_loss: 1.3683 | learning_rate: 0.00025
+
+Training epoch 41...
+Epoch 41: train_acc: 76.0489% , train_loss: 0.7763 | val_acc: 64.8200% , val_loss: 1.3425 | learning_rate: 0.00013
+
+Training epoch 42...
+Epoch 42: train_acc: 76.2889% , train_loss: 0.7665 | val_acc: 64.7000% , val_loss: 1.3448 | learning_rate: 0.00013
+
+Training epoch 43...
+Epoch 43: train_acc: 76.7089% , train_loss: 0.7623 | val_acc: 64.8200% , val_loss: 1.3697 | learning_rate: 0.00013
+
+Training epoch 44...
+Epoch 44: train_acc: 76.7444% , train_loss: 0.7493 | val_acc: 64.8600% , val_loss: 1.3568 | learning_rate: 0.00013
+
+Training finished
+Restored Best weights from epoch: 36
+
+
+
+14th run:
+
+Added Dense(128) + BatchNorm + ReLU after Dense(256)
+
+
+
+1th run results:
 
